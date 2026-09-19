@@ -1,1 +1,12 @@
 .kilo
+.pytest_cache
+poetry.lock
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing & Environment
+.pytest_cache/
+.env
+.venv/
