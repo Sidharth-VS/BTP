@@ -78,24 +78,20 @@ BTP/
 │
 ├── nodes/
 │   ├── Dockerfile
-│   ├── config.yaml                # Node ports, storage paths, Ollama endpoint
+│   ├── config.yaml
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py                # Node bootstrap & Flower ClientApp runner
 │   │   ├── flwr_client/
 │   │   │   ├── __init__.py
-│   │   │   ├── client.py          # ClientApp message handlers (Query, Register, Health)
-│   │   │   └── registration.py    # Startup registration payload builder
-│   │   ├── rag/
-│   │   │   ├── __init__.py
-│   │   │   ├── chroma_db.py       # ChromaDB vector store client
-│   │   │   ├── indexer.py         # Document chunking & ingestion pipeline
-│   │   │   ├── profiler.py        # Centroid C_i & cluster profile P_i generator
-│   │   │   └── pipeline.py        # LangChain local retrieval pipeline
-│   │   └── local_llm/
+│   │   │   ├── client.py          # Handles QueryIns and RegisterIns via ChromaDB
+│   │   │   └── registration.py    # Profile builder (C_i, P_i)
+│   │   └── rag/
 │   │       ├── __init__.py
-│   │       └── ollama_engine.py   # Local Ollama wrapper
-│   ├── data/                      # Disjoint document stores for nodes
+│   │       ├── chroma_db.py       # Native ChromaDB client & collection management
+│   │       ├── indexer.py         # Document chunking & ingestion pipeline
+│   │       └── profiler.py        # Document centroid C_i & cluster profile P_i
+│   ├── data/
 │   │   ├── node_finance/
 │   │   ├── node_health/
 │   │   └── node_tech/
