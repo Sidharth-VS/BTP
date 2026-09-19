@@ -1,11 +1,25 @@
 # BTP
+A Federated Retrieval-Augmented Generation (FedRAG) system with Trust-Aware Secure Routing (TASR) built on FastAPI, ChromaDB, LangChain, and Flower (`flwr`).
+---
 
-### Folder and Files 
-#### Direcctory  Structure
+## Project Overview
+
+* **Architecture**: Centralized Coordinator service with distributed edge nodes communicating over Flower custom messaging protocols.
+* **Routing Strategy**: Trust-Aware Secure Routing (TASR per arXiv:2605.28112) using three-signal feedback (`u_rel`, `u_cons`, `u_agr`) to suppress malicious or hijacked nodes.
+* **Vector Store**: Local ChromaDB instances deployed per node with disjoint domain corpora.
+* **Embeddings**: Provider-agnostic embedding interface defaulting to local `all-MiniLM-L6-v2` (384 dimensions).
+* **Generation Engine**: Local LLM execution via Ollama.
+
+---
+
+## Directory Structure
+
+```text
 BTP/
 ├── .gitignore
 ├── plan.md
 ├── README.md
+├── memory.md
 ├── docker-compose.yml
 ├── pyproject.toml
 ├── poetry.lock
@@ -24,12 +38,12 @@ BTP/
 │   │   └── openai_cohere.py       # OpenAI / Cohere clients
 │   ├── flower/
 │   │   ├── __init__.py
-│   │   ├── messages.py            # QueryIns, QueryRes, RegisterIns, RecordSet wrappers
-│   │   └── serialization.py       # Pydantic <-> Flwr RecordSet converters
+│   │   ├── messages.py            # QueryIns, QueryRes, RegisterIns, RegisterRes
+│   │   └── serialization.py       # Flower RecordDict & ArrayRecord serializers
 │   └── schemas/
 │       ├── __init__.py
 │       ├── common.py              # Status, Error, Health schemas
-│       ├── document.py            # DocumentChunk, Metadata
+│       ├── document.py            # DocumentChunk, SearchResult schemas
 │       └── tasr.py                # NodeProfile, TASRTrustState schemas
 │
 ├── coordinator/
@@ -40,10 +54,10 @@ BTP/
 │   │   ├── main.py                # FastAPI gateway entry point
 │   │   ├── api/
 │   │   │   ├── __init__.py
-│   │   │   ├── v1/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── endpoints.py   # /query, /nodes, /health endpoints
-│   │   │   │   └── deps.py        # Authentication & service dependencies
+│   │   │   ├── deps.py            # Authentication & service dependencies
+│   │   │   └── v1/
+│   │   │       ├── __init__.py
+│   │   │       └── endpoints.py   # /query, /nodes, /health endpoints
 │   │   ├── flwr_server/
 │   │   │   ├── __init__.py
 │   │   │   ├── server.py          # Flower ServerApp runner
@@ -90,8 +104,11 @@ BTP/
 │       └── test_flwr_client.py
 │
 └── tests/
+    ├── test_phase1_scaffolding.py # Phase 1 serialization and embeddings test
     ├── e2e/
     │   ├── test_broadcast_rag.py
     │   └── test_tasr_convergence.py # Adversary trust decay & HR@K evaluation
     └── mocks/
         └── malicious_node.py        # Hijacking/adversarial mock node
+        
+```
