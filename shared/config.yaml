@@ -1,0 +1,4 @@
+embedding_model_name: "all-MiniLM-L6-v2"
+embedding_dimension: 384
+grpc_port: 9091
+api_key_header: "X-API-Key"
