@@ -9,13 +9,14 @@ services:
       dockerfile: coordinator/Dockerfile
     container_name: fedrag-coordinator
     ports:
-      - "8000:8000"   # REST API for clients
-      - "9091:9091"   # Flower gRPC for nodes
+      - "${COORDINATOR_PORT:-8000}:8000"
+      - "${FLOWER_PORT:-9091}:9091"
     volumes:
       - ./workspace/coordinator:/workspace/coordinator
       - ./coordinator/config.yaml:/app/coordinator/config.yaml:ro
     environment:
       - COORDINATOR_CONFIG=/app/coordinator/config.yaml
+      - API_KEY=${API_KEY}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 10s
@@ -36,6 +37,7 @@ services:
     environment:
       - NODE_ID=node-1
       - NODES_CONFIG=/app/nodes/nodes.yaml
+      - API_KEY=${API_KEY}
     volumes:
       - ./workspace/chroma/node-1:/workspace/chroma/node-1
       - ./workspace/data/node-1:/workspace/data/node-1:ro
@@ -57,6 +59,7 @@ services:
     environment:
       - NODE_ID=node-2
       - NODES_CONFIG=/app/nodes/nodes.yaml
+      - API_KEY=${API_KEY}
     volumes:
       - ./workspace/chroma/node-2:/workspace/chroma/node-2
       - ./workspace/data/node-2:/workspace/data/node-2:ro
@@ -78,6 +81,7 @@ services:
     environment:
       - NODE_ID=node-3
       - NODES_CONFIG=/app/nodes/nodes.yaml
+      - API_KEY=${API_KEY}
     volumes:
       - ./workspace/chroma/node-3:/workspace/chroma/node-3
       - ./workspace/data/node-3:/workspace/data/node-3:ro
@@ -88,8 +92,24 @@ services:
     networks:
       - fedrag-net
 
-  # To add node-4, copy a node block above and change NODE_ID=node-4.
-  # Then add node-4 to nodes/nodes.yaml and re-run setup_workspace.sh.
+  # ---------------------------------------------------------------------------
+  # Frontend UI (Streamlit :8501)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fedrag-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - COORDINATOR_API_URL=${COORDINATOR_API_URL}
+      - API_KEY=${API_KEY}
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
 
 networks:
   fedrag-net:
