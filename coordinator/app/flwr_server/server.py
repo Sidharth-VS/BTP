@@ -48,7 +48,6 @@ class FlowerServer:
                 config=ServerConfig(num_rounds=self.num_rounds),
                 strategy=self.strategy,
                 client_manager=SimpleClientManager(),
-                grpc_max_message_length=2 * 1024 * 1024 * 1024,  # 2 GiB
             )
         except Exception as exc:
             logger.error("Flower server crashed: %s", exc, exc_info=True)
