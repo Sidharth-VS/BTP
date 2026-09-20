@@ -105,6 +105,94 @@ BTP/
     │   ├── test_broadcast_rag.py
     │   └── test_tasr_convergence.py # Adversary trust decay & HR@K evaluation
     └── mocks/
-        └── malicious_node.py        # Hijacking/adversarial mock node
-        
 ```
+
+---
+
+## Quick Start & How to Run
+
+### 1. Prerequisites & Workspace Setup
+Before running the services for the first time, run the workspace setup script to create runtime directories and seed sample corpus data:
+
+```bash
+bash setup_workspace.sh
+```
+
+---
+
+### 2. Option A: Run with Docker Compose (Recommended)
+
+Spins up the **Coordinator REST API**, **Flower gRPC Server**, and all **Edge Nodes** in containerized environments:
+
+```bash
+docker compose up --build
+```
+
+- **Coordinator REST API**: `http://localhost:8000`
+- **Flower gRPC Server**: `localhost:9091`
+
+To stop all containers:
+```bash
+docker compose down
+```
+
+---
+
+### 3. Option B: Run Locally without Docker (Separate Terminals)
+
+If you prefer to run services natively in your Python environment (`.venv`):
+
+**Terminal 1 — Coordinator:**
+```bash
+COORDINATOR_CONFIG=coordinator/config.yaml python -m coordinator.app.main
+```
+
+**Terminal 2 — Node 1 (Finance):**
+```bash
+NODE_ID=node-1 SERVER_ADDRESS=localhost:9091 python -m nodes.app.main
+```
+
+**Terminal 3 — Node 2 (Medical):**
+```bash
+NODE_ID=node-2 SERVER_ADDRESS=localhost:9091 python -m nodes.app.main
+```
+
+**Terminal 4 — Node 3 (Legal):**
+```bash
+NODE_ID=node-3 SERVER_ADDRESS=localhost:9091 python -m nodes.app.main
+```
+
+---
+
+## How to Query the System
+
+### HTTP Request
+`POST http://localhost:8000/api/v1/query`
+
+**Headers:** `Content-Type: application/json`
+
+**Body:**
+```json
+{
+  "query": "What is portfolio diversification?",
+  "top_k": 5,
+  "routing_strategy": "broadcast"
+}
+```
+
+### Via cURL
+```bash
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is portfolio diversification?",
+    "top_k": 5,
+    "routing_strategy": "broadcast"
+  }'
+```
+
+### Via Postman
+1. Method: `POST`
+2. URL: `http://localhost:8000/api/v1/query`
+3. Headers: `Content-Type: application/json`
+4. Body: Choose `raw` -> `JSON` and paste the query payload above.
