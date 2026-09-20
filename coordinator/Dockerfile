@@ -8,10 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps
-COPY pyproject.toml poetry.lock* ./
-RUN pip install poetry==1.8.3 && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --only main
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY shared/ ./shared/
