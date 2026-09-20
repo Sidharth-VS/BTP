@@ -1,95 +1,88 @@
 #!/usr/bin/env bash
 # setup_workspace.sh
-# Creates the runtime workspace for the FedRAG system.
-# Run once before starting services: bash setup_workspace.sh
+# Creates the runtime workspace for the FedRAG system from nodes/nodes.yaml.
+# Run once before starting services: bash setup_workspace.sh [workspace_dir]
 # Safe to re-run (idempotent).
 
 set -euo pipefail
 
 WORKSPACE="${1:-./workspace}"
+NODES_YAML="nodes/nodes.yaml"
+
+if [ ! -f "$NODES_YAML" ]; then
+    echo "ERROR: $NODES_YAML not found. Run from the project root."
+    exit 1
+fi
+
 echo "Setting up FedRAG workspace at: $WORKSPACE"
+echo "Reading node registry from: $NODES_YAML"
+echo ""
+
+# Parse node IDs and domains from nodes.yaml using Python (already in venv)
+PYTHON="${PYTHON:-python}"
+NODE_LIST=$($PYTHON - <<'PYEOF'
+import yaml, sys
+with open("nodes/nodes.yaml") as f:
+    data = yaml.safe_load(f)
+for node in data.get("nodes", []):
+    print(f"{node['node_id']}:{node.get('domain','general')}")
+PYEOF
+)
 
 # ---------------------------------------------------------------------------
-# Directory structure
+# Create coordinator workspace dir
 # ---------------------------------------------------------------------------
-
 mkdir -p "$WORKSPACE/coordinator"
-mkdir -p "$WORKSPACE/chroma/node-1"
-mkdir -p "$WORKSPACE/chroma/node-2"
-mkdir -p "$WORKSPACE/chroma/node-3"
-mkdir -p "$WORKSPACE/data/node-1"
-mkdir -p "$WORKSPACE/data/node-2"
-mkdir -p "$WORKSPACE/data/node-3"
+echo "  [coordinator] workspace/coordinator/"
+
+# ---------------------------------------------------------------------------
+# Create per-node directories and copy sample data
+# ---------------------------------------------------------------------------
+while IFS=: read -r NODE_ID DOMAIN; do
+    echo "  [${NODE_ID}] domain=${DOMAIN}"
+
+    mkdir -p "$WORKSPACE/chroma/${NODE_ID}"
+    mkdir -p "$WORKSPACE/data/${NODE_ID}"
+
+    # Copy sample documents if they exist in nodes/data/<node_id>/
+    SRC_DIR="nodes/data/${NODE_ID}"
+    DST_DIR="$WORKSPACE/data/${NODE_ID}"
+    if [ -d "$SRC_DIR" ]; then
+        for f in "$SRC_DIR"/*; do
+            [ -f "$f" ] || continue
+            FNAME=$(basename "$f")
+            if [ ! -f "$DST_DIR/$FNAME" ]; then
+                cp "$f" "$DST_DIR/"
+                echo "    Copied $FNAME → workspace/data/${NODE_ID}/"
+            else
+                echo "    Skipped $FNAME (already present)"
+            fi
+        done
+    else
+        echo "    WARNING: No sample data found at $SRC_DIR"
+        echo "             Place your documents there and re-run setup_workspace.sh"
+    fi
+
+done <<< "$NODE_LIST"
+
+# ---------------------------------------------------------------------------
+# Create logs dir
+# ---------------------------------------------------------------------------
 mkdir -p "$WORKSPACE/logs"
 
-echo "  Created directory structure"
-
 # ---------------------------------------------------------------------------
-# Copy sample documents into each node's data folder
-# (skips if already present)
+# Summary
 # ---------------------------------------------------------------------------
-
-SRC="nodes/data"
-
-copy_if_missing() {
-    local src="$1"
-    local dst="$2"
-    if [ ! -f "$dst/$(basename $src)" ]; then
-        cp "$src" "$dst/"
-        echo "  Copied $(basename $src) → $dst/"
-    else
-        echo "  Skipped $(basename $src) (already exists)"
-    fi
-}
-
-if [ -f "$SRC/node_finance/finance_basics.md" ]; then
-    copy_if_missing "$SRC/node_finance/finance_basics.md" "$WORKSPACE/data/node-1"
-fi
-if [ -f "$SRC/node_medical/medical_basics.md" ]; then
-    copy_if_missing "$SRC/node_medical/medical_basics.md" "$WORKSPACE/data/node-2"
-fi
-if [ -f "$SRC/node_legal/legal_basics.md" ]; then
-    copy_if_missing "$SRC/node_legal/legal_basics.md" "$WORKSPACE/data/node-3"
-fi
-
-echo "  Sample documents ready"
-
-# ---------------------------------------------------------------------------
-# Generate per-node config files
-# ---------------------------------------------------------------------------
-
-write_node_config() {
-    local node_id="$1"
-    local domain="$2"
-    local out="$WORKSPACE/config_${node_id//-/_}.yaml"
-
-    cat > "$out" <<YAML
-node_id: "$node_id"
-domain: "$domain"
-server_address: "coordinator:9091"
-persist_directory: "/workspace/chroma/$node_id"
-collection_name: "fedrag_${node_id//-/_}"
-data_directory: "/workspace/data/$node_id"
-embedding_model_name: "all-MiniLM-L6-v2"
-embedding_dimension: 384
-top_k_default: 5
-YAML
-    echo "  Written $out"
-}
-
-write_node_config "node-1" "finance"
-write_node_config "node-2" "medical"
-write_node_config "node-3" "legal"
-
-# ---------------------------------------------------------------------------
-# Done
-# ---------------------------------------------------------------------------
-
 echo ""
 echo "Workspace ready at: $WORKSPACE"
 echo ""
 echo "Contents:"
 find "$WORKSPACE" -type f | sort | sed 's/^/  /'
 echo ""
-echo "Next steps:"
-echo "  docker compose up --build"
+echo "To add a new node:"
+echo "  1. Append an entry to nodes/nodes.yaml"
+echo "  2. Place documents in nodes/data/<new_node_id>/"
+echo "  3. Re-run: bash setup_workspace.sh"
+echo "  4. Add a service to docker-compose.yml"
+echo ""
+echo "Next step: docker compose up --build"

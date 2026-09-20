@@ -1,0 +1,29 @@
+# FedRAG Node Registry
+# Add a new entry here to spin up a new node.
+# Each node needs a corresponding Docker Compose service (see docker-compose.yml)
+# and its data placed in workspace/data/<node_id>/ before running setup_workspace.sh.
+
+# Common defaults applied to all nodes unless overridden per-node
+defaults:
+  server_address: "coordinator:9091"   # Coordinator Flower gRPC address
+  embedding_model_name: "all-MiniLM-L6-v2"
+  embedding_dimension: 384
+  top_k_default: 5
+  # Paths are resolved inside the container (workspace volume mounted at /workspace)
+  persist_directory_prefix: "/workspace/chroma"
+  data_directory_prefix: "/workspace/data"
+  collection_name_prefix: "fedrag"
+
+nodes:
+  - node_id: "node-1"
+    domain: "finance"
+
+  - node_id: "node-2"
+    domain: "medical"
+
+  - node_id: "node-3"
+    domain: "legal"
+
+  # To add node-4:
+  # - node_id: "node-4"
+  #   domain: "technology"
