@@ -25,7 +25,7 @@ from flwr.client import NumPyClient, start_client
 from nodes.app.rag.chroma_db import ChromaStore
 from nodes.app.rag.indexer import DocumentIndexer
 from nodes.app.rag.profiler import NodeProfiler
-from shared.embeddings.local import LocalSentenceTransformerEmbeddings
+from shared.embeddings.local import LocalEmbeddings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,9 +64,16 @@ def load_node_config(nodes_yaml: str, node_id: str) -> Dict[str, Any]:
     cfg = {**defaults, **match}
 
     # Resolve paths from prefixes
-    prefix_chroma = cfg.get("persist_directory_prefix", "/workspace/chroma")
-    prefix_data   = cfg.get("data_directory_prefix",    "/workspace/data")
+    prefix_chroma = os.environ.get("PERSIST_DIR_PREFIX") or cfg.get("persist_directory_prefix", "/workspace/chroma")
+    prefix_data   = os.environ.get("DATA_DIR_PREFIX") or cfg.get("data_directory_prefix", "/workspace/data")
     prefix_coll   = cfg.get("collection_name_prefix",   "fedrag")
+
+    # If running locally on host outside container, fall back from /workspace to ./workspace
+    if not Path("/workspace").exists():
+        if prefix_chroma.startswith("/workspace"):
+            prefix_chroma = "." + prefix_chroma
+        if prefix_data.startswith("/workspace"):
+            prefix_data = "." + prefix_data
 
     cfg.setdefault("persist_directory", f"{prefix_chroma}/{node_id}")
     cfg.setdefault("data_directory",    f"{prefix_data}/{node_id}")
@@ -193,13 +200,10 @@ def main() -> None:
     logger.info("Loaded config for '%s' (domain: %s)", node_id, cfg.get("domain"))
 
     # Initialize embedder + ChromaDB
-    embedder = LocalSentenceTransformerEmbeddings(
-        model_name=cfg.get("embedding_model_name", "all-MiniLM-L6-v2")
-    )
+
     chroma_store = ChromaStore(
         persist_dir=cfg["persist_directory"],
         collection_name=cfg["collection_name"],
-        embedder=embedder,
     )
     logger.info("ChromaDB at '%s'", cfg["persist_directory"])
 
@@ -216,7 +220,7 @@ def main() -> None:
     profiler = NodeProfiler(chroma_store)
 
     # Connect to coordinator via Flower gRPC
-    server_address = cfg.get("server_address", "coordinator:9091")
+    server_address = os.environ.get("SERVER_ADDRESS") or cfg.get("server_address", "coordinator:9091")
     logger.info("Connecting to coordinator at '%s'...", server_address)
     start_client(
         server_address=server_address,
