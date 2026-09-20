@@ -1,0 +1,96 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # Coordinator — FastAPI (REST :8000) + Flower gRPC server (:9091)
+  # ---------------------------------------------------------------------------
+  coordinator:
+    build:
+      context: .
+      dockerfile: coordinator/Dockerfile
+    container_name: fedrag-coordinator
+    ports:
+      - "8000:8000"   # REST API for clients
+      - "9091:9091"   # Flower gRPC for nodes
+    volumes:
+      - ./workspace/coordinator:/workspace/coordinator
+      - ./coordinator/config.yaml:/app/coordinator/config.yaml:ro
+    environment:
+      - COORDINATOR_CONFIG=/app/coordinator/config.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - fedrag-net
+
+  # ---------------------------------------------------------------------------
+  # Node-1 (finance domain)
+  # ---------------------------------------------------------------------------
+  node-1:
+    build:
+      context: .
+      dockerfile: nodes/Dockerfile
+    container_name: fedrag-node-1
+    environment:
+      - NODE_ID=node-1
+      - NODES_CONFIG=/app/nodes/nodes.yaml
+    volumes:
+      - ./workspace/chroma/node-1:/workspace/chroma/node-1
+      - ./workspace/data/node-1:/workspace/data/node-1:ro
+      - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
+
+  # ---------------------------------------------------------------------------
+  # Node-2 (medical domain)
+  # ---------------------------------------------------------------------------
+  node-2:
+    build:
+      context: .
+      dockerfile: nodes/Dockerfile
+    container_name: fedrag-node-2
+    environment:
+      - NODE_ID=node-2
+      - NODES_CONFIG=/app/nodes/nodes.yaml
+    volumes:
+      - ./workspace/chroma/node-2:/workspace/chroma/node-2
+      - ./workspace/data/node-2:/workspace/data/node-2:ro
+      - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
+
+  # ---------------------------------------------------------------------------
+  # Node-3 (legal domain)
+  # ---------------------------------------------------------------------------
+  node-3:
+    build:
+      context: .
+      dockerfile: nodes/Dockerfile
+    container_name: fedrag-node-3
+    environment:
+      - NODE_ID=node-3
+      - NODES_CONFIG=/app/nodes/nodes.yaml
+    volumes:
+      - ./workspace/chroma/node-3:/workspace/chroma/node-3
+      - ./workspace/data/node-3:/workspace/data/node-3:ro
+      - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
+
+  # To add node-4, copy a node block above and change NODE_ID=node-4.
+  # Then add node-4 to nodes/nodes.yaml and re-run setup_workspace.sh.
+
+networks:
+  fedrag-net:
+    driver: bridge

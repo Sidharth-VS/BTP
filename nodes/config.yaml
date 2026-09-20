@@ -1,9 +1,0 @@
-node_id: "node_finance"
-domain: "finance"
-server_address: "coordinator:9091"
-persist_directory: "./chroma_storage"
-collection_name: "fedrag_corpus"
-data_directory: "./nodes/data/node_finance"
-embedding_model_name: "all-MiniLM-L6-v2"
-embedding_dimension: 384
-top_k_default: 5

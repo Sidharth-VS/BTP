@@ -1,0 +1,44 @@
+
+# Coordinator Service Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  log_level: "info"
+
+flower:
+  server_address: "0.0.0.0:9091"
+  num_rounds: 1000          # effectively "run forever"
+  min_available_clients: 1
+  min_fit_clients: 1
+
+api:
+  api_key: "fedrag-dev-key"  # Override via env: API_KEY
+  rate_limit_per_minute: 100
+
+synthesis:
+  ollama_url: "http://localhost:11434"
+  ollama_model: "llama3.2"
+  max_context_chars: 4000
+  timeout_seconds: 30
+
+# TASR Hyperparameters (per arXiv:2605.28112)
+tasr:
+  defense_mode: "rel_cons_agr"  # "rel_cons_agr", "rel_cons", or "none"
+  decay_factor: 0.9             # γ: decay when feedback < median
+  recovery_factor: 1.02         # γ_rec: recover when feedback >= median
+  min_reputation: 0.1           # floor for trust variables
+  warmup_queries: 50            # queries before trust updates kick in
+  cold_start_s0: 0.7            # s_0: initial cold-start factor
+  cold_start_tau: 30.0          # τ_s: warmup queries for cold-start ramp
+  alpha_r: 1.0                  # exponent for u_rel
+  alpha_c: 1.0                  # exponent for u_cons (via g)
+  alpha_a: 0.5                  # exponent for u_agr (via g)
+  delta_c: 0.3                  # δ_c: floor for g(u_cons)
+  delta_a: 0.5                  # δ_a: floor for g(u_agr)
+  docs_for_feedback: 5          # top-K docs used for feedback computation
+  explore_interval: 20          # every N queries, add random extra node
+  explore_extra: 1              # number of extra nodes for exploration
+  fixed_threshold: null         # if set, use fixed threshold instead of median
+
+trust_db:
+  path: "./trust_scores.db"     # SQLite database for trust persistence

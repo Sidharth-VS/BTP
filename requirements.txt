@@ -1,0 +1,28 @@
+# FedRAG — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# Core framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# Flower (federated communication / gRPC transport)
+flwr>=1.8.0
+
+# Vector database
+chromadb>=0.5.0
+
+# Document chunking
+langchain>=0.2.0
+langchain-text-splitters>=0.2.0
+langchain-community>=0.2.0
+
+# Embeddings handled by chromadb's built-in DefaultEmbeddingFunction (onnxruntime, no PyTorch)
+
+# Data / config
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+numpy>=1.26.0
+pyyaml>=6.0.1
+
+# HTTP client (for future Ollama integration)
+httpx>=0.27.0
