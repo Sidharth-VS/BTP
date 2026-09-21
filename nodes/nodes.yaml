@@ -23,7 +23,6 @@ nodes:
 
   - node_id: "node-3"
     domain: "legal"
-
-  # To add node-4:
-  # - node_id: "node-4"
-  #   domain: "technology"
+    
+  - node_id: "node-4"
+    domain: "computer_science"
