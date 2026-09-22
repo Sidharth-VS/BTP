@@ -1,118 +1,132 @@
 # Project Memory: FedRAG with TASR Routing
-**Phase**: Phase 1 - Foundation & Communication Scaffolding  
-**Status**: Completed & Verified  
-**Runtime Environment**: WSL (Fedora Linux), Conda (`fed_lab`), Python 3.10.20, Poetry  
+
+**Phase**: Phase 1 (Scaffolding & Messaging) & Phase 2 (Federated Node RAG & Central Synthesis Pipeline)  
+**Status**: Implemented & Operational (Broadcast RAG, ChromaDB Vector Storage, Ollama Synthesis, Streamlit UI & Docker Deployment)  
+**Runtime Environment**: WSL (Fedora Linux), Conda (`fed_lab`), Python 3.10.20, Poetry, Docker Compose, Ollama  
 
 ---
 
-## 1. Phase Overview & Goals
-Phase 1 established the monorepo foundation, execution runtime, dependency baseline, and inter-process messaging protocols required for a Federated Retrieval-Augmented Generation (FedRAG) system with Trust-Aware Secure Routing (TASR). The core objective was ensuring that the central Coordinator service and distributed Edge Nodes share typed data contracts and an error-free serialization layer over Flower (`flwr`) custom messaging.
+## 1. System Overview & Implementation Status
+
+The FedRAG repository has progressed beyond initial Phase 1 foundation into a functional, end-to-end Federated Retrieval-Augmented Generation (FedRAG) system. The system runs across a central Coordinator, 4 domain-specialized Edge Nodes (`node-1` finance, `node-2` medical, `node-3` legal, `node-4` tech), a central Ollama LLM synthesis engine, and a Streamlit UI dashboard.
+
+### Operational Features:
+* **Federated Communication Protocol**: Flower (`flwr`) gRPC messaging using a custom `FedRAGStrategy` and `NumPyClient` setup.
+* **Distributed Vector Storage**: Persistent ChromaDB vector databases per node paired with local SentenceTransformer embeddings (`all-MiniLM-L6-v2`).
+* **Document Ingestion & Profiling**: Automated document chunking, metadata extraction, global normalized centroid ($C_i$), and multi-centroid profile ($P_i$) computation.
+* **Broadcast Query Routing**: Coordinator fans out incoming queries to all healthy registered nodes via Flower, aggregating ranked chunks and raw document vector matrices.
+* **Central LLM Answer Synthesis**: Integrated Ollama client (`llama3.2:3b`) synthesizes grounded answers from multi-node evidence.
+* **UI & Docker Deployment**: Streamlit Explorer dashboard (`frontend/app.py`), containerized 4-node `docker-compose.yml`, and `setup_workspace.sh` automation script.
+* **TASR Foundation**: Data schemas and module stubs (`coordinator/app/tasr/`) prepared for paper-compliant Trust-Aware Secure Routing integration.
 
 ---
 
-## 2. Environment & Dependency Configuration
+## 2. Environment & Dependency Baseline (`pyproject.toml`)
 
-### Runtime Setup
-* **Isolated Environment**: Configured an isolated Conda environment (`fed_lab`) running Python 3.10 to prevent dependency conflicts with existing workspace virtual environments.
-* **Poetry Configuration**: Directed Poetry to bind to the active Conda interpreter (`poetry config virtualenvs.prefer-active-python true`) and configured custom request timeouts (`export POETRY_REQUESTS_TIMEOUT=300`) to prevent read timeouts on large binary wheel downloads.
-
-### Pinned Dependencies (`pyproject.toml`)
 * `python`: `>=3.10,<3.12`
 * `flwr`: `^1.8.0` (Resolved to `flwr 1.30.0`)
-* `fastapi`: `^0.111.0`
-* `uvicorn[standard]`: `^0.30.0`
+* `fastapi`: `^0.111.0` & `uvicorn[standard]`: `^0.30.0`
 * `chromadb`: `^0.5.0`
-* `langchain`: `^0.2.0`
-* `langchain-community`: `^0.2.0`
-* `sentence-transformers`: `^3.0.0`
-* `pydantic`: `^2.7.0`
-* `pydantic-settings`: `^2.3.0`
-* `ollama`: `^0.2.1`
-* `numpy`: `^1.26.0` (Pinned to `1.26.4`)
-* `onnxruntime`: `<1.24.0` (Explicitly constrained to resolve binary ABI platform incompatibilities on Linux x86_64)
-* `pytest` & `pytest-asyncio`: Testing framework
+* `langchain` & `langchain-community`: `^0.2.0`
+* `sentence-transformers`: `^3.0.0` (`all-MiniLM-L6-v2`, 384-dimensional)
+* `pydantic`: `^2.7.0` & `pydantic-settings`: `^2.3.0`
+* `ollama`: `^0.2.1` (`llama3.2:3b` default model)
+* `streamlit`: Interactive UI dashboard
+* `numpy`: `1.26.4` & `onnxruntime`: `<1.24.0`
 
 ---
 
-## 3. Implemented Components & Code Artifacts
-
-### A. Repository & Monorepo Architecture
-Structured the repository into decoupled service directories and a central shared library:
-* `shared/`: Common schemas, embedding models, configuration loaders, and Flower serialization adapters.
-* `coordinator/`: FastAPI gateway, Flower `ServerApp`, TASR trust management engine, and LLM synthesis.
-* `nodes/`: Flower `ClientApp`, ChromaDB vector store, LangChain RAG pipeline, and local profiler.
-* `tests/`: Unit tests, scaffolding verification, and end-to-end evaluation suites.
-
-### B. Shared Data Contracts (`shared/schemas/`)
-* **`shared/schemas/document.py`**:
-  * `DocumentChunk`: Document segment schema containing unique `id`, text `content`, vector `embedding`, arbitrary `metadata`, originating `node_id`, and UTC `timestamp`.
-  * `SearchResult`: Retrieved context chunk containing textual `content`, similarity `score`, and dictionary `metadata`.
-* **`shared/schemas/tasr.py`**:
-  * `NodeProfile`: Registration payload tracking node identifier, gRPC host address, detected domain, global centroid vector $C_i$, sample embeddings, and multi-centroid cluster profiles $P_i$[cite: 1, 4].
-  * `TASRTrustState`: Paper-compliant trust tracking model maintaining retrieval relevance ($u_{\text{rel}}$), consistency ($u_{\text{cons}}$), agreement ($u_{\text{agr}}$), cold-start discount ($s_i$), update frequency, and rolling history.
-
-### C. Provider-Agnostic Embedding Interface (`shared/embeddings/`)
-* **`shared/embeddings/base.py`**: Declared abstract base class `BaseEmbeddingProvider` enforcing `embed_query()`, `embed_documents()`, and dimensionality properties.
-* **`shared/embeddings/local.py`**: Implemented `LocalSentenceTransformerEmbeddings` utilizing `sentence-transformers` with model `all-MiniLM-L6-v2`. It outputs normalized 384-dimensional embeddings locally without relying on external API rate limits.
-
-### D. Flower Custom Messaging & Serialization Protocol (`shared/flower/`)
-* **`shared/flower/messages.py`**:
-  * `QueryIns`: Query instruction passing query text, retrieval parameter `top_k`, and metadata filter mappings.
-  * `QueryRes`: Query response carrying retrieved `SearchResult` records, execution telemetry, static trust score, and retrieved document embedding matrices (`List[List[float]]`) required for TASR post-routing feedback.
-  * `RegisterIns`: Node registration payload sending document centroid $C_i$ and multi-cluster centroids $P_i$.
-  * `RegisterRes`: Confirmation response returning assigned node status and configuration.
-* **`shared/flower/serialization.py`**:
-  * Bi-directional serializer interfacing typed dataclasses with Flower's native `RecordDict`, `ConfigRecord`, and `ArrayRecord` structures.
-
----
-
-## 4. Engineering Challenges & Root-Cause Debugging Log
-
-During Phase 1 test execution, multiple breaking changes and serialization edge cases were diagnosed and patched:
-
-1. **Package Discovery & Directory Resolution**:
-   * *Issue*: `poetry run pytest` failed with `ModuleNotFoundError: No module named 'shared'`.
-   * *Root Cause*: The repository was operating inside a nested folder structure (`~/BTP/BTP`), and the editable package definitions in `pyproject.toml` were not registered in the active virtual environment.
-   * *Resolution*: Executed `poetry install` inside `~/BTP/BTP` to link `shared`, `coordinator`, and `nodes` packages directly into the active Python site-packages.
-
-2. **Flower 1.30 Record API Migration**:
-   * *Issue*: `AttributeError: 'RecordSet' object has no attribute 'set_configs_record'`.
-   * *Root Cause*: Flower 1.30 deprecated `RecordSet` in favor of `RecordDict` and replaced setter functions with direct dictionary indexing on `configs_records` and `array_records`.
-   * *Resolution*: Refactored `FlowerMessageSerializer` to directly manipulate `RecordDict.configs_records` using `ConfigRecord` instances and `RecordDict.array_records` using `ArrayRecord`.
-
-3. **Array Type Validation Failure**:
-   * *Issue*: `TypeError: Invalid arguments for Array. Expected either a PyTorch tensor, a NumPy ndarray, or explicit dtype/shape/stype/data values`.
-   * *Root Cause*: Attempting manual byte serialization (`arr.tobytes()`) without passing internal serialization types (`stype`) rejected by Flower's new constructor.
-   * *Resolution*: Fed NumPy `ndarray` objects directly into Flower's constructor (`Array(arr)`), allowing Flower to manage the array encapsulation natively.
-
-4. **Numpy Byte Header Deserialization Failure**:
-   * *Issue*: `ValueError: cannot reshape array of size 800 into shape (2,384)`.
-   * *Root Cause*: Flower 1.30 serializes `Array(arr)` using the binary `.npy` format, appending a 32-byte header containing array metadata (768 bytes of float32 data + 32-byte header = 800 bytes). Reading raw bytes using `np.frombuffer()` parsed the header as numerical data, altering the total byte length.
-   * *Resolution*: Replaced `np.frombuffer()` with `np.load(io.BytesIO(flwr_arr.data))`, correctly consuming the `.npy` magic header and extracting the original `(2, 384)` matrix without loss.
-
----
-
-## 5. Verification & Test Suite Results
-
-Test execution ran against `tests/test_phase1_scaffolding.py`:
-
-```bash
-poetry run pytest tests/test_phase1_scaffolding.py
+## 3. Implemented Components & Codebase Architecture
 
 ```
+BTP/
+├── shared/                 # Common schemas, embeddings, flower messaging, security
+│   ├── schemas/            # Pydantic models (document.py, tasr.py, common.py)
+│   ├── embeddings/         # Base & local SentenceTransformer embedding providers
+│   ├── flower/             # Custom message types & Flower 1.30 record serializers
+│   └── auth/               # API key authentication middleware (security.py)
+├── coordinator/            # Central REST API gateway, Flower gRPC Server, Ollama synthesizer
+│   ├── app/main.py         # Entrypoint (Flower gRPC + uvicorn REST dual-thread runtime)
+│   ├── app/api/v1/         # Endpoints: POST /query, GET /nodes, GET /health
+│   ├── app/flwr_server/    # Server, FedRAGStrategy, and QueryBroker thread bridge
+│   ├── app/synthesis/      # OllamaSynthesizer answer generation client
+│   └── app/tasr/           # TASR trust manager & router stubs (router, feedback, db)
+├── nodes/                  # Distributed federated edge node implementation
+│   ├── app/main.py         # Node entrypoint & Flower NumPyClient implementation
+│   ├── app/rag/            # ChromaStore vector DB, DocumentIndexer, NodeProfiler
+│   ├── nodes.yaml          # Unified node registry configuration (node-1 to node-4)
+│   └── data/               # Domain-specific markdown document datasets
+├── frontend/               # Streamlit Explorer UI (app.py, Dockerfile)
+├── workspace/              # Persistent runtime storage (Chroma databases, data copies, logs)
+├── setup_workspace.sh      # Workspace initialization and sample data seeding script
+└── docker-compose.yml      # Orchestration for Coordinator, 4 Nodes, and Frontend
+```
 
-### Results Summary
-* Collected Tests: 3
-* Passed: 3 (100% Pass Rate)
-* Execution Time: 10.74s
+### Detailed Component Summary:
 
-### Validated Guarantees
-1. test_embedding_pipeline: Confirmed the local embedding model loads cleanly, processes raw queries, and outputs vectors of dimension 384.
-2. test_query_serialization_roundtrip: Proved that client queries and structured dictionary filters are preserved across Flower configuration records without mutation.
-3. test_query_res_serialization_with_arrays: Confirmed that multi-dimensional document embedding matrices, floating-point processing latencies, and search chunk payloads survive binary serialization and deserialization over the network contract.
+#### A. Shared Infrastructure (`shared/`)
+* **Data Contracts (`shared/schemas/`)**:
+  * [document.py](file:///home/sidharth/Coding/Projects/BTP/shared/schemas/document.py): `DocumentChunk`, `SearchResult`.
+  * [tasr.py](file:///home/sidharth/Coding/Projects/BTP/shared/schemas/tasr.py): `NodeProfile` (capturing gRPC host, domain, centroid $C_i$, sample embeddings, multi-cluster profile $P_i$), `TASRTrustState` ($u_{\text{rel}}, u_{\text{cons}}, u_{\text{agr}}, s_i$).
+  * [common.py](file:///home/sidharth/Coding/Projects/BTP/shared/schemas/common.py): REST schemas (`QueryRequest`, `QueryResponse`, `SourceResult`, `RoutingInfo`, `NodeInfo`, `NodeListResponse`, `HealthResponse`, `NodeStatus`, `RoutingStrategy`).
+* **Embeddings (`shared/embeddings/`)**:
+  * [local.py](file:///home/sidharth/Coding/Projects/BTP/shared/embeddings/local.py): `LocalSentenceTransformerEmbeddings` producing normalized 384-d vectors via `all-MiniLM-L6-v2`.
+* **Flower Custom Serialization (`shared/flower/`)**:
+  * [messages.py](file:///home/sidharth/Coding/Projects/BTP/shared/flower/messages.py) & [serialization.py](file:///home/sidharth/Coding/Projects/BTP/shared/flower/serialization.py): Custom serializer connecting `QueryIns`, `QueryRes`, `RegisterIns`, and `RegisterRes` dataclasses with Flower's `RecordDict`, `ConfigRecord`, and `ArrayRecord`.
+* **Security (`shared/auth/security.py`)**:
+  * `verify_api_key`: FastAPI dependency validating `X-API-Key` headers against environment settings.
+
+#### B. Central Coordinator (`coordinator/app/`)
+* **Dual-Thread Execution ([main.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/main.py))**: Initializes `FlowerServer` on the main thread for gRPC signal compliance and spawns `uvicorn` in a background daemon thread for REST client traffic.
+* **REST Gateway ([api/v1/endpoints.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/api/v1/endpoints.py))**:
+  * `POST /api/v1/query`: Receives client queries, submits them to the Flower gRPC engine via `QueryBroker`, aggregates chunk search results, ranks sources, calls `OllamaSynthesizer` for answer generation, and returns response telemetry.
+  * `GET /api/v1/nodes`: Returns status, trust, and metadata for registered nodes.
+  * `GET /api/v1/health`: Provides system health and connected node metrics.
+* **Flower gRPC Engine ([flwr_server/](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/flwr_server/))**:
+  * [strategy.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/flwr_server/strategy.py): `FedRAGStrategy` manages query fanout (`configure_fit`), chunk/embedding aggregation (`aggregate_fit`), and health monitoring rounds (`configure_evaluate`).
+  * `QueryBroker`: Thread-safe bridge using `threading.Event` to sync async uvicorn HTTP requests with Flower's round-based gRPC loop.
+* **Synthesis Engine ([synthesis/ollama_client.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/synthesis/ollama_client.py))**:
+  * `OllamaSynthesizer`: Formats context from top-ranked node chunks and prompts local Ollama LLM (`llama3.2:3b`) for answer synthesis.
+* **TASR Routing Stubs ([tasr/](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/tasr/))**:
+  * [router.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/tasr/router.py), [feedback.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/tasr/feedback.py), [db.py](file:///home/sidharth/Coding/Projects/BTP/coordinator/app/tasr/db.py): Architectural stubs prepared for TASR trust calculation and routing.
+
+#### C. Distributed Edge Nodes (`nodes/app/`)
+* **Local RAG Pipeline ([rag/](file:///home/sidharth/Coding/Projects/BTP/nodes/app/rag/))**:
+  * [chroma_db.py](file:///home/sidharth/Coding/Projects/BTP/nodes/app/rag/chroma_db.py): `ChromaStore` handles vector storage, cosine similarity queries, and raw document matrix extraction.
+  * [indexer.py](file:///home/sidharth/Coding/Projects/BTP/nodes/app/rag/indexer.py): `DocumentIndexer` splits `.md`/`.txt` files with `RecursiveCharacterTextSplitter` (chunk size 500, overlap 50).
+  * [profiler.py](file:///home/sidharth/Coding/Projects/BTP/nodes/app/rag/profiler.py): `NodeProfiler` extracts normalized global centroid $C_i$ and multi-cluster profile $P_i$.
+* **Flower Node Client ([main.py](file:///home/sidharth/Coding/Projects/BTP/nodes/app/main.py))**:
+  * `FedRAGNodeClient` (`flwr.client.NumPyClient`): Exposes `get_properties()` for registration profiling, `fit()` for local vector search, and `evaluate()` for node health checks.
+* **Node Registry & Data ([nodes/nodes.yaml](file:///home/sidharth/Coding/Projects/BTP/nodes/nodes.yaml))**:
+  * Defines 4 default domain nodes: `node-1` (finance), `node-2` (medical), `node-3` (legal), and `node-4` (tech/computer science) with local data files in [nodes/data/](file:///home/sidharth/Coding/Projects/BTP/nodes/data/).
+
+#### D. Frontend & Operations
+* **Streamlit Interface ([frontend/app.py](file:///home/sidharth/Coding/Projects/BTP/frontend/app.py))**: Web dashboard for querying the FedRAG cluster, viewing synthesized answers, inspecting federated evidence chunks per node, and monitoring routing telemetry.
+* **Containerization ([docker-compose.yml](file:///home/sidharth/Coding/Projects/BTP/docker-compose.yml))**: Orchestrates Coordinator, 4 Node containers, Streamlit frontend, and connects to host Ollama instance via `host.docker.internal`.
+* **Workspace Tooling ([setup_workspace.sh](file:///home/sidharth/Coding/Projects/BTP/setup_workspace.sh))**: Idempotent bash script initializing `/workspace/chroma` and `/workspace/data` directories.
 
 ---
 
-## 6. Readiness for Phase 2
-The core shared infrastructure, data types, local embedding models, and networking contracts are fully established and validated. 
-The repository is ready to proceed to Phase 2: Federated Node Implementation (local ChromaDB ingestion, document centroid extraction, and local LangChain retrieval loops).
+---
+
+## 54 Verification & Test Suite Status
+
+* **Scaffolding Unit Suite ([tests/test_phase1_scaffolding.py](file:///home/sidharth/Coding/Projects/BTP/tests/test_phase1_scaffolding.py))**: Passed (3/3 tests verified local SentenceTransformer embeddings, metadata preservation, and binary embedding array roundtrips over Flower serialization).
+* **Phase 3 Test Stubs**:
+  * End-to-end broadcast & TASR convergence suites (`tests/e2e/ test_broadcast_rag.py`, `test_tasr_convergence.py`).
+  * Malicious node mock simulation (`tests/mocks/malicious_node.py`).
+  * Coordinator API & Node Indexer unit tests (`coordinator/tests/test_api.py`, `nodes/tests/test_indexer.py`).
+
+---
+
+## 5. Next Steps & Phase 3 Roadmap
+
+1. **TASR Trust Engine Integration**:
+   * Implement feedback functions $f_{\text{rel}}, f_{\text{cons}}, f_{\text{agr}}$ in `coordinator/app/tasr/feedback.py` using returned document embedding matrices and registered centroids.
+   * Implement node trust update logic, cold-start discount $s_i$, and soft-gating function $g(x)$ in `coordinator/app/tasr/router.py`.
+   * Replace broadcast query routing with dynamic, trust-weighted node selection (`TASRRouter`).
+2. **Adversarial Security Testing**:
+   * Implement malicious node behavior in `tests/mocks/malicious_node.py` (returning ungrounded chunks or fabricated document vectors).
+   * Verify TASR defense modes (`rel_cons_agr`, `rel_cons`, `none`) and reputation degradation in `tests/e2e/test_tasr_convergence.py`.
+3. **Benchmark & Performance Evaluation**:
+   * Measure retrieval accuracy, bandwidth consumption, and latency across Broadcast vs. TASR routing strategies.
