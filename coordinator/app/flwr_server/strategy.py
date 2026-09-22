@@ -2,13 +2,10 @@
 FedRAG Flower Strategy.
 
 Bridges the FastAPI REST layer with Flower's gRPC round-based loop.
-
-- configure_fit()  : picks up a pending query from QueryBroker, sends to all nodes
-- aggregate_fit()  : collects retrieved chunks + embeddings, publishes merged result
-- configure_evaluate(): periodic health-check (every 10 rounds)
-- aggregate_evaluate(): updates the in-process node registry
+- configure_fit(): Picks up pending queries, applies targeted routing with cold-start protection.
+- aggregate_fit(): Merges retrieved chunks and doc embeddings from nodes.
+- configure_evaluate() & aggregate_evaluate(): Periodic node health-checks.
 """
-
 import json
 import logging
 import queue
@@ -17,9 +14,6 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from flwr.server.client_manager import ClientManager
-from flwr.server.client_proxy import ClientProxy
-from flwr.server.strategy import Strategy
 from flwr.compat.common.typing import (
     EvaluateIns,
     EvaluateRes,
@@ -28,23 +22,18 @@ from flwr.compat.common.typing import (
     Parameters,
     Scalar,
 )
+from flwr.server.client_manager import ClientManager
+from flwr.server.client_proxy import ClientProxy
+from flwr.server.strategy import Strategy
 
 logger = logging.getLogger("coordinator.strategy")
 
-# ---------------------------------------------------------------------------
-# QueryBroker — thread-safe REST ↔ Strategy bridge
-# ---------------------------------------------------------------------------
+_EMBEDDING_DIM = 384  # all-MiniLM-L6-v2
+
 
 class QueryBroker:
     """
-    Thread-safe bridge between the FastAPI request handler and the Flower Strategy
-    running in a background daemon thread.
-
-    Flow:
-        REST handler calls submit_query()  →  blocks on threading.Event
-        Strategy calls get_pending()       →  returns the query dict
-        Strategy calls publish_result()    →  signals the Event
-        submit_query() unblocks            →  returns the result dict
+    Thread-safe bridge between the FastAPI request handler and the Flower Strategy.
     """
 
     def __init__(self) -> None:
@@ -58,12 +47,9 @@ class QueryBroker:
         query: str,
         top_k: int = 5,
         filters: Optional[dict] = None,
+        target_nodes: Optional[List[str]] = None,
         timeout: float = 120.0,
     ) -> dict:
-        """
-        Called by the FastAPI endpoint (runs in uvicorn worker thread).
-        Blocks until the Strategy publishes results or timeout is reached.
-        """
         query_id = uuid.uuid4().hex
         event = threading.Event()
 
@@ -75,6 +61,7 @@ class QueryBroker:
             "query": query,
             "top_k": top_k,
             "filters": filters or {},
+            "target_nodes": target_nodes,
         }
 
         try:
@@ -97,14 +84,12 @@ class QueryBroker:
         return result
 
     def get_pending(self, timeout: float = 0.5) -> Optional[dict]:
-        """Called by Strategy.configure_fit() to check for a queued query."""
         try:
             return self._queue.get(timeout=timeout)
         except queue.Empty:
             return None
 
     def publish_result(self, query_id: str, result: dict) -> None:
-        """Called by Strategy.aggregate_fit() when all node responses are collected."""
         with self._lock:
             self._results[query_id] = result
             event = self._events.get(query_id)
@@ -114,36 +99,17 @@ class QueryBroker:
             logger.warning("publish_result: no waiter for query_id '%s'", query_id)
 
 
-# ---------------------------------------------------------------------------
-# FedRAG Strategy
-# ---------------------------------------------------------------------------
-
-_EMBEDDING_DIM = 384  # all-MiniLM-L6-v2
-
-
 class FedRAGStrategy(Strategy):
     """
-    Custom Flower Strategy for FedRAG broadcast query routing.
-
-    Each Flower round maps to one of:
-      - A query dispatch round (when QueryBroker has a pending query)
-      - A health-check round (every 10 rounds)
-      - A no-op round (nothing pending)
+    Custom Flower Strategy supporting targeted TASR routing and health checking.
     """
 
     def __init__(self, broker: QueryBroker) -> None:
         self.broker = broker
         self._current_query: Optional[dict] = None
-        # cid (str) → {node_id, status, doc_count}
         self._node_registry: Dict[str, dict] = {}
 
-    # ------------------------------------------------------------------
-    # Required Strategy overrides
-    # ------------------------------------------------------------------
-
-    def initialize_parameters(
-        self, client_manager: ClientManager
-    ) -> Optional[Parameters]:
+    def initialize_parameters(self, client_manager: ClientManager) -> Optional[Parameters]:
         return Parameters(tensors=[], tensor_type="numpy.ndarray")
 
     def configure_fit(
@@ -152,14 +118,13 @@ class FedRAGStrategy(Strategy):
         parameters: Parameters,
         client_manager: ClientManager,
     ) -> List[Tuple[ClientProxy, FitIns]]:
-        """Pick up a pending query and fan it out to all connected nodes."""
         pending = self.broker.get_pending(timeout=0.5)
         if pending is None:
-            return []  # no query → skip round immediately
+            return []
 
         clients = client_manager.all()
         if not clients:
-            logger.warning("Query received but no nodes are connected — returning empty result")
+            logger.warning("Query received but no nodes are connected")
             self.broker.publish_result(
                 pending["query_id"],
                 {"nodes": {}, "error": "no nodes connected"},
@@ -167,10 +132,7 @@ class FedRAGStrategy(Strategy):
             return []
 
         self._current_query = pending
-        logger.info(
-            "[Round %d] Dispatching query to %d node(s): '%s'",
-            server_round, len(clients), pending["query"][:60],
-        )
+        target_nodes = pending.get("target_nodes")
 
         fit_config: Dict[str, Scalar] = {
             "action": "query",
@@ -180,7 +142,34 @@ class FedRAGStrategy(Strategy):
             "query_id": pending["query_id"],
         }
         fit_ins = FitIns(parameters=parameters, config=fit_config)
-        return [(proxy, fit_ins) for proxy in clients.values()]
+
+        # Targeted dispatch logic with cold-start protection
+        dispatched: List[Tuple[ClientProxy, FitIns]] = []
+        for cid, proxy in clients.items():
+            node_info = self._node_registry.get(cid)
+
+            # Cold-start fallback: include node if not yet registered via health checks
+            if not node_info:
+                dispatched.append((proxy, fit_ins))
+                continue
+
+            node_id = node_info.get("node_id", cid)
+            if not target_nodes or node_id in target_nodes:
+                dispatched.append((proxy, fit_ins))
+
+        # Fallback to all connected clients if targeting filter produced no matches
+        if target_nodes and not dispatched:
+            logger.warning(
+                "Target nodes %s not found in registry; broadcasting to all %d connected clients",
+                target_nodes, len(clients),
+            )
+            dispatched = [(proxy, fit_ins) for proxy in clients.values()]
+
+        logger.info(
+            "[Round %d] Dispatching query '%s' to %d node(s)",
+            server_round, pending["query"][:50], len(dispatched),
+        )
+        return dispatched
 
     def aggregate_fit(
         self,
@@ -188,7 +177,6 @@ class FedRAGStrategy(Strategy):
         results: List[Tuple[ClientProxy, FitRes]],
         failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
-        """Collect node responses and publish merged result to the broker."""
         if self._current_query is None:
             return None, {}
 
@@ -200,7 +188,6 @@ class FedRAGStrategy(Strategy):
             results_json = str(metrics.get("results_json", "[]"))
             processing_time = float(metrics.get("processing_time", 0.0))
 
-            # Deserialise doc embeddings from returned tensor bytes
             doc_embeddings: List[List[float]] = []
             if fit_res.parameters and fit_res.parameters.tensors:
                 raw = fit_res.parameters.tensors[0]
@@ -209,7 +196,7 @@ class FedRAGStrategy(Strategy):
                     if arr.size > 0 and arr.size % _EMBEDDING_DIM == 0:
                         doc_embeddings = arr.reshape(-1, _EMBEDDING_DIM).tolist()
                 except Exception as e:
-                    logger.debug("Could not deserialise embeddings from node '%s': %s", node_id, e)
+                    logger.debug("Could not deserialize embeddings from node '%s': %s", node_id, e)
 
             try:
                 search_results = json.loads(results_json)
@@ -221,10 +208,6 @@ class FedRAGStrategy(Strategy):
                 "doc_embeddings": doc_embeddings,
                 "processing_time": processing_time,
             }
-            logger.info(
-                "  Node '%s': %d chunks in %.3fs",
-                node_id, len(search_results), processing_time,
-            )
 
         for failure in failures:
             logger.warning("Node failure during fit: %s", failure)
@@ -242,7 +225,6 @@ class FedRAGStrategy(Strategy):
         parameters: Parameters,
         client_manager: ClientManager,
     ) -> List[Tuple[ClientProxy, EvaluateIns]]:
-        """Run a health-check every 10 rounds."""
         if server_round % 10 != 1:
             return []
         clients = client_manager.all()
@@ -255,7 +237,6 @@ class FedRAGStrategy(Strategy):
         results: List[Tuple[ClientProxy, EvaluateRes]],
         failures: List[Union[Tuple[ClientProxy, EvaluateRes], BaseException]],
     ) -> Tuple[Optional[float], Dict[str, Scalar]]:
-        """Update the in-process node registry from health-check responses."""
         for client_proxy, eval_res in results:
             metrics = eval_res.metrics or {}
             node_id = str(metrics.get("node_id", client_proxy.cid))
@@ -265,7 +246,7 @@ class FedRAGStrategy(Strategy):
                 "status": status,
                 "doc_count": eval_res.num_examples,
             }
-            logger.info("Health | node '%s': %s (%d docs)", node_id, status, eval_res.num_examples)
+            logger.info("Health check | node '%s': %s (%d docs)", node_id, status, eval_res.num_examples)
         return None, {}
 
     def evaluate(
