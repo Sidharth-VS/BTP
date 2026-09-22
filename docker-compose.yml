@@ -11,12 +11,16 @@ services:
     ports:
       - "${COORDINATOR_PORT:-8000}:8000"
       - "${FLOWER_PORT:-9091}:9091"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./workspace/coordinator:/workspace/coordinator
       - ./coordinator/config.yaml:/app/coordinator/config.yaml:ro
     environment:
       - COORDINATOR_CONFIG=/app/coordinator/config.yaml
       - API_KEY=${API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 10s
@@ -24,7 +28,10 @@ services:
       retries: 5
       start_period: 15s
     networks:
-      - fedrag-net
+      fedrag-net:
+        aliases:
+          - coordinator
+          - fedrag-coordinator
 
   # ---------------------------------------------------------------------------
   # Node-1 (finance domain)
@@ -85,6 +92,28 @@ services:
     volumes:
       - ./workspace/chroma/node-3:/workspace/chroma/node-3
       - ./workspace/data/node-3:/workspace/data/node-3:ro
+      - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
+
+  # ---------------------------------------------------------------------------
+  # Node-4 (computer science / tech domain)
+  # ---------------------------------------------------------------------------
+  node-4:
+    build:
+      context: .
+      dockerfile: nodes/Dockerfile
+    container_name: fedrag-node-4
+    environment:
+      - NODE_ID=node-4
+      - NODES_CONFIG=/app/nodes/nodes.yaml
+      - API_KEY=${API_KEY}
+    volumes:
+      - ./workspace/chroma/node-4:/workspace/chroma/node-4
+      - ./workspace/data/node-4:/workspace/data/node-4:ro
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:

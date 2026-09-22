@@ -1,8 +1,8 @@
 """
 Coordinator REST API — v1 endpoints.
 
-POST /api/v1/query  — broadcast query to all nodes, return ranked chunks
-GET  /api/v1/nodes  — list connected nodes (from last health-check round)
+POST /api/v1/query  — broadcast query to all nodes, rank chunks, and synthesize answer
+GET  /api/v1/nodes  — list connected nodes
 GET  /api/v1/health — coordinator health
 """
 import logging
@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, status
 
 from coordinator.app.api.deps import get_flower_server
+from coordinator.app.synthesis.ollama_client import OllamaSynthesizer
 from shared.schemas.common import (
     HealthResponse,
     NodeInfo,
@@ -26,6 +27,7 @@ from shared.schemas.common import (
 
 logger = logging.getLogger("coordinator.api")
 router = APIRouter()
+synthesizer = OllamaSynthesizer()
 
 
 # ---------------------------------------------------------------------------
@@ -34,10 +36,6 @@ router = APIRouter()
 
 @router.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
-    """
-    Broadcast the query to all connected nodes via Flower gRPC.
-    Returns the merged, score-ranked retrieved chunks (no LLM generation).
-    """
     flower = get_flower_server()
 
     try:
@@ -61,7 +59,7 @@ def query(req: QueryRequest) -> QueryResponse:
 
     node_results: Dict[str, Any] = result.get("nodes", {})
 
-    # ---- Flatten + rank all chunks across nodes -------------------------
+    # Flatten and rank all chunks across nodes
     all_sources: List[SourceResult] = []
     for node_id, node_data in node_results.items():
         for chunk in node_data.get("results", []):
@@ -71,11 +69,11 @@ def query(req: QueryRequest) -> QueryResponse:
                     score=float(chunk.get("score", 0.0)),
                     metadata=chunk.get("metadata", {}),
                     node_id=node_id,
-                    trust_score=1.0,  # placeholder until TASR is wired
+                    trust_score=1.0,
                 )
             )
 
-    # Sort by score descending
+    # Score descending
     all_sources.sort(key=lambda s: s.score, reverse=True)
 
     selected_nodes = list(node_results.keys())
@@ -86,8 +84,11 @@ def query(req: QueryRequest) -> QueryResponse:
         total_nodes_queried=len(selected_nodes),
     )
 
+    # Synthesize answer using the central local LLM
+    answer = synthesizer.synthesize(query=req.query, sources=all_sources)
+
     return QueryResponse(
-        answer="",  # generation not implemented yet
+        answer=answer,
         sources=all_sources,
         routing_info=routing_info,
     )
@@ -99,7 +100,6 @@ def query(req: QueryRequest) -> QueryResponse:
 
 @router.get("/nodes", response_model=NodeListResponse)
 def list_nodes() -> NodeListResponse:
-    """List nodes that have reported in via the last health-check round."""
     flower = get_flower_server()
     registry = flower.get_node_registry()
 
