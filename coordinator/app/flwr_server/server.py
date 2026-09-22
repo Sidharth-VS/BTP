@@ -15,6 +15,7 @@ from coordinator.app.flwr_server.client_manager import LoggingClientManager
 from coordinator.app.flwr_server.strategy import FedRAGStrategy, QueryBroker
 
 logger = logging.getLogger("coordinator.flower_server")
+logging.getLogger("flwr").setLevel(logging.WARNING)
 
 
 class FlowerServer:
