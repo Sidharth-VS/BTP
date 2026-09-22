@@ -242,10 +242,11 @@ class FedRAGStrategy(Strategy):
         parameters: Parameters,
         client_manager: ClientManager,
     ) -> List[Tuple[ClientProxy, EvaluateIns]]:
-        """Run a health-check every 10 rounds."""
-        if server_round % 10 != 1:
-            return []
+        """Run a health-check every 10 rounds or immediately when new nodes join."""
         clients = client_manager.all()
+        has_unregistered = any(cid not in self._node_registry for cid in clients.keys())
+        if server_round % 10 != 1 and not has_unregistered:
+            return []
         eval_ins = EvaluateIns(parameters=parameters, config={"action": "health"})
         return [(proxy, eval_ins) for proxy in clients.values()]
 
@@ -260,12 +261,22 @@ class FedRAGStrategy(Strategy):
             metrics = eval_res.metrics or {}
             node_id = str(metrics.get("node_id", client_proxy.cid))
             status = str(metrics.get("status", "unknown"))
+            is_new = client_proxy.cid not in self._node_registry
             self._node_registry[client_proxy.cid] = {
                 "node_id": node_id,
                 "status": status,
                 "doc_count": eval_res.num_examples,
             }
-            logger.info("Health | node '%s': %s (%d docs)", node_id, status, eval_res.num_examples)
+            if is_new:
+                logger.info(
+                    "✅ Node registered profile | Node ID: '%s' (CID: %s, status: %s, docs: %d)",
+                    node_id, client_proxy.cid, status, eval_res.num_examples,
+                )
+            else:
+                logger.info(
+                    "Health check | Node ID: '%s' (CID: %s): %s (%d docs)",
+                    node_id, client_proxy.cid, status, eval_res.num_examples,
+                )
         return None, {}
 
     def evaluate(
