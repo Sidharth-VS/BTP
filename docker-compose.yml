@@ -40,6 +40,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest
     container_name: fedrag-node-1
     environment:
       - NODE_ID=node-1
@@ -62,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest
     container_name: fedrag-node-2
     environment:
       - NODE_ID=node-2
@@ -84,6 +86,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest
     container_name: fedrag-node-3
     environment:
       - NODE_ID=node-3
@@ -106,6 +109,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest
     container_name: fedrag-node-4
     environment:
       - NODE_ID=node-4
