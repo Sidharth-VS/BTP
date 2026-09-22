@@ -10,6 +10,7 @@ from shared.schemas.document import SearchResult
 class RoutingStrategy(str, Enum):
     BROADCAST = "broadcast"
     SINGLE_BEST = "single_best"
+    TASR = "tasr"
 
 
 class NodeStatus(str, Enum):
