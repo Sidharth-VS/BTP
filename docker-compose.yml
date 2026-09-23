@@ -15,10 +15,11 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./workspace/coordinator:/workspace/coordinator
+      - ./coordinator:/app/coordinator
       - ./coordinator/config.yaml:/app/coordinator/config.yaml:ro
     environment:
       - COORDINATOR_CONFIG=/app/coordinator/config.yaml
-      - API_KEY=${API_KEY}
+      - API_KEY=${API_KEY:-fedrag-dev-key}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
     healthcheck:
@@ -45,7 +46,7 @@ services:
     environment:
       - NODE_ID=node-1
       - NODES_CONFIG=/app/nodes/nodes.yaml
-      - API_KEY=${API_KEY}
+      - API_KEY=${API_KEY:-fedrag-dev-key}
     volumes:
       - ./workspace/chroma/node-1:/workspace/chroma/node-1
       - ./workspace/data/node-1:/workspace/data/node-1:ro
@@ -69,7 +70,7 @@ services:
     environment:
       - NODE_ID=node-2
       - NODES_CONFIG=/app/nodes/nodes.yaml
-      - API_KEY=${API_KEY}
+      - API_KEY=${API_KEY:-fedrag-dev-key}
     volumes:
       - ./workspace/chroma/node-2:/workspace/chroma/node-2
       - ./workspace/data/node-2:/workspace/data/node-2:ro
@@ -93,7 +94,7 @@ services:
     environment:
       - NODE_ID=node-3
       - NODES_CONFIG=/app/nodes/nodes.yaml
-      - API_KEY=${API_KEY}
+      - API_KEY=${API_KEY:-fedrag-dev-key}
     volumes:
       - ./workspace/chroma/node-3:/workspace/chroma/node-3
       - ./workspace/data/node-3:/workspace/data/node-3:ro
@@ -117,11 +118,55 @@ services:
     environment:
       - NODE_ID=node-4
       - NODES_CONFIG=/app/nodes/nodes.yaml
-      - API_KEY=${API_KEY}
+      - API_KEY=${API_KEY:-fedrag-dev-key}
     volumes:
       - ./workspace/chroma/node-4:/workspace/chroma/node-4
       - ./workspace/data/node-4:/workspace/data/node-4:ro
       - ./workspace/cache:/root/.cache
+      - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
+
+  # ---------------------------------------------------------------------------
+  # Node-5 (hardware security domain)
+  # ---------------------------------------------------------------------------
+  node-5:
+    build:
+      context: .
+      dockerfile: nodes/Dockerfile
+    container_name: fedrag-node-5
+    environment:
+      - NODE_ID=node-5
+      - NODES_CONFIG=/app/nodes/nodes.yaml
+      - API_KEY=${API_KEY:-fedrag-dev-key}
+    volumes:
+      - ./workspace/chroma/node-5:/workspace/chroma/node-5
+      - ./workspace/data/node-5:/workspace/data/node-5:ro
+      - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - fedrag-net
+
+  # ---------------------------------------------------------------------------
+  # Node-6 (computer vision domain)
+  # ---------------------------------------------------------------------------
+  node-6:
+    build:
+      context: .
+      dockerfile: nodes/Dockerfile
+    container_name: fedrag-node-6
+    environment:
+      - NODE_ID=node-6
+      - NODES_CONFIG=/app/nodes/nodes.yaml
+      - API_KEY=${API_KEY:-fedrag-dev-key}
+    volumes:
+      - ./workspace/chroma/node-6:/workspace/chroma/node-6
+      - ./workspace/data/node-6:/workspace/data/node-6:ro
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -139,9 +184,11 @@ services:
     container_name: fedrag-frontend
     ports:
       - "8501:8501"
+    volumes:
+      - ./frontend:/app
     environment:
-      - COORDINATOR_API_URL=${COORDINATOR_API_URL}
-      - API_KEY=${API_KEY}
+      - COORDINATOR_API_URL=${COORDINATOR_API_URL:-http://fedrag-coordinator:8000/api/v1/query}
+      - API_KEY=${API_KEY:-fedrag-dev-key}
     depends_on:
       coordinator:
         condition: service_healthy
