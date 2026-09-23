@@ -49,6 +49,7 @@ services:
     volumes:
       - ./workspace/chroma/node-1:/workspace/chroma/node-1
       - ./workspace/data/node-1:/workspace/data/node-1:ro
+      - ./workspace/cache:/root/.cache
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -72,6 +73,7 @@ services:
     volumes:
       - ./workspace/chroma/node-2:/workspace/chroma/node-2
       - ./workspace/data/node-2:/workspace/data/node-2:ro
+      - ./workspace/cache:/root/.cache
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -95,6 +97,7 @@ services:
     volumes:
       - ./workspace/chroma/node-3:/workspace/chroma/node-3
       - ./workspace/data/node-3:/workspace/data/node-3:ro
+      - ./workspace/cache:/root/.cache
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -118,6 +121,7 @@ services:
     volumes:
       - ./workspace/chroma/node-4:/workspace/chroma/node-4
       - ./workspace/data/node-4:/workspace/data/node-4:ro
+      - ./workspace/cache:/root/.cache
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
