@@ -32,7 +32,7 @@ logger = logging.getLogger("coordinator.api")
 router = APIRouter()
 
 synthesizer = OllamaSynthesizer()
-tasr_router = TrustAwareRouter()
+tasr_router = TrustAwareRouter(k_route = 6)
 embedder = LocalSentenceTransformerEmbeddings()
 
 

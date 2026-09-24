@@ -17,6 +17,8 @@ services:
       - ./workspace/coordinator:/workspace/coordinator
       - ./coordinator:/app/coordinator
       - ./coordinator/config.yaml:/app/coordinator/config.yaml:ro
+      - ./shared:/app/shared
+      - ./workspace/cache:/root/.cache
     environment:
       - COORDINATOR_CONFIG=/app/coordinator/config.yaml
       - API_KEY=${API_KEY:-fedrag-dev-key}
@@ -27,7 +29,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 120s
     networks:
       fedrag-net:
         aliases:
@@ -51,6 +53,8 @@ services:
       - ./workspace/chroma/node-1:/workspace/chroma/node-1
       - ./workspace/data/node-1:/workspace/data/node-1:ro
       - ./workspace/cache:/root/.cache
+      - ./nodes:/app/nodes
+      - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -75,6 +79,8 @@ services:
       - ./workspace/chroma/node-2:/workspace/chroma/node-2
       - ./workspace/data/node-2:/workspace/data/node-2:ro
       - ./workspace/cache:/root/.cache
+      - ./nodes:/app/nodes
+      - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -99,6 +105,8 @@ services:
       - ./workspace/chroma/node-3:/workspace/chroma/node-3
       - ./workspace/data/node-3:/workspace/data/node-3:ro
       - ./workspace/cache:/root/.cache
+      - ./nodes:/app/nodes
+      - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -123,6 +131,8 @@ services:
       - ./workspace/chroma/node-4:/workspace/chroma/node-4
       - ./workspace/data/node-4:/workspace/data/node-4:ro
       - ./workspace/cache:/root/.cache
+      - ./nodes:/app/nodes
+      - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -145,6 +155,9 @@ services:
     volumes:
       - ./workspace/chroma/node-5:/workspace/chroma/node-5
       - ./workspace/data/node-5:/workspace/data/node-5:ro
+      - ./workspace/cache:/root/.cache
+      - ./nodes:/app/nodes
+      - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
@@ -167,6 +180,9 @@ services:
     volumes:
       - ./workspace/chroma/node-6:/workspace/chroma/node-6
       - ./workspace/data/node-6:/workspace/data/node-6:ro
+      - ./workspace/cache:/root/.cache
+      - ./nodes:/app/nodes
+      - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     depends_on:
       coordinator:
