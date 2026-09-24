@@ -7,7 +7,7 @@ server:
 
 flower:
   server_address: "0.0.0.0:9091"
-  num_rounds: 1000          # effectively "run forever"
+  num_rounds: 9223372036854775807 # effectively run forever (sys.maxsize)
   min_available_clients: 1
   min_fit_clients: 1
 

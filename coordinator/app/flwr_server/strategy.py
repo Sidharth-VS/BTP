@@ -225,9 +225,25 @@ class FedRAGStrategy(Strategy):
         parameters: Parameters,
         client_manager: ClientManager,
     ) -> List[Tuple[ClientProxy, EvaluateIns]]:
-        if server_round % 10 != 1:
-            return []
+        """Run periodic health-checks and log cluster status every 20 rounds."""
         clients = client_manager.all()
+
+        # Log connected node count & list every 20 rounds
+        if server_round > 0 and server_round % 20 == 0:
+            node_ids = [
+                self._node_registry.get(cid, {}).get("node_id", cid)
+                for cid in clients.keys()
+            ]
+            logger.info(
+                "📊 Cluster Status [Round %d]: %d node(s) connected %s",
+                server_round,
+                len(clients),
+                node_ids if node_ids else "[]",
+            )
+
+        has_unregistered = any(cid not in self._node_registry for cid in clients.keys())
+        if server_round % 10 != 1 and not has_unregistered:
+            return []
         eval_ins = EvaluateIns(parameters=parameters, config={"action": "health"})
         return [(proxy, eval_ins) for proxy in clients.values()]
 
@@ -241,12 +257,17 @@ class FedRAGStrategy(Strategy):
             metrics = eval_res.metrics or {}
             node_id = str(metrics.get("node_id", client_proxy.cid))
             status = str(metrics.get("status", "unknown"))
+            is_new = client_proxy.cid not in self._node_registry
             self._node_registry[client_proxy.cid] = {
                 "node_id": node_id,
                 "status": status,
                 "doc_count": eval_res.num_examples,
             }
-            logger.info("Health check | node '%s': %s (%d docs)", node_id, status, eval_res.num_examples)
+            if is_new:
+                logger.info(
+                    "✅ Node registered profile | Node ID: '%s' (CID: %s, status: %s, docs: %d)",
+                    node_id, client_proxy.cid, status, eval_res.num_examples,
+                )
         return None, {}
 
     def evaluate(

@@ -27,6 +27,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+logging.getLogger("flwr").setLevel(logging.WARNING)
 logger = logging.getLogger("coordinator")
 
 
@@ -34,12 +35,14 @@ logger = logging.getLogger("coordinator")
 # Configuration
 # ---------------------------------------------------------------------------
 
+import sys
+
 class CoordinatorConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     flower_server_address: str = "0.0.0.0:9091"
-    flower_num_rounds: int = 100_000
+    flower_num_rounds: int = sys.maxsize
 
 
 def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig:
@@ -52,7 +55,7 @@ def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig
     flat["api_host"] = raw.get("server", {}).get("host", "0.0.0.0")
     flat["api_port"] = raw.get("server", {}).get("port", 8000)
     flat["flower_server_address"] = raw.get("flower", {}).get("server_address", "0.0.0.0:9091")
-    flat["flower_num_rounds"] = raw.get("flower", {}).get("num_rounds", 100_000)
+    flat["flower_num_rounds"] = raw.get("flower", {}).get("num_rounds", sys.maxsize)
     return CoordinatorConfig(**flat)
 
 
