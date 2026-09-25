@@ -82,7 +82,7 @@ class TrustAwareRouter:
         explore_interval: int = 20,
         explore_extra: int = 1,
         defense_mode: str = "rel_cons_agr",
-        k_route: int = 3,
+        k_route: int = 6,
         # Alias parameters for backwards compatibility
         decay_gamma: Optional[float] = None,
         recovery_gamma: Optional[float] = None,

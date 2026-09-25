@@ -165,8 +165,20 @@ def list_nodes() -> NodeListResponse:
         node_status = NodeStatus.HEALTHY if status_str == "healthy" else NodeStatus.DEGRADED
 
         current_trust = 1.0
+        u_rel = 1.0
+        u_cons = 1.0
+        u_agr = 1.0
+        s_i = 0.7
+        feedback_count = 0
+
         if nid in tasr_router.trust_states:
+            state = tasr_router.trust_states[nid]
             current_trust = float(tasr_router.compute_trust_weight(nid))
+            u_rel = float(state.u_rel)
+            u_cons = float(state.u_cons)
+            u_agr = float(state.u_agr)
+            s_i = float(state.s_i)
+            feedback_count = int(state.feedback_count)
 
         nodes.append(
             NodeInfo(
@@ -175,11 +187,39 @@ def list_nodes() -> NodeListResponse:
                 status=node_status,
                 trust_score=current_trust,
                 domain=info.get("domain", ""),
+                u_rel=u_rel,
+                u_cons=u_cons,
+                u_agr=u_agr,
+                s_i=s_i,
+                feedback_count=feedback_count,
                 last_seen=datetime.utcnow(),
             )
         )
 
     return NodeListResponse(nodes=nodes)
+
+
+@router.get("/tasr/summary")
+def get_tasr_summary() -> Dict[str, Any]:
+    return {
+        "defense_mode": tasr_router.defense_mode,
+        "total_queries": tasr_router.query_count,
+        "warmup_queries": tasr_router.warmup_queries,
+        "is_warmup_active": tasr_router.query_count <= tasr_router.warmup_queries,
+        "exploration_interval": tasr_router.explore_interval,
+        "nodes": {
+            str(nid): {
+                "effective_trust": float(tasr_router.compute_trust_weight(nid)),
+                "u_rel": float(tasr_router.reputation.get(nid, 1.0)),
+                "u_cons": float(tasr_router.consistency_trust.get(nid, 1.0)),
+                "u_agr": float(tasr_router.agreement_trust.get(nid, 1.0)),
+                "s_i": float(tasr_router._cold_start_factor(nid)),
+                "feedback_count": int(tasr_router.feedback_count.get(nid, 0)),
+                "reputation_history": tasr_router.reputation_history.get(nid, []),
+            }
+            for nid in tasr_router.centroids
+        },
+    }
 
 
 @router.get("/health", response_model=HealthResponse)
