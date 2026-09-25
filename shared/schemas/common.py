@@ -53,6 +53,11 @@ class NodeInfo(BaseModel):
     domain: str = ""
     capabilities: List[str] = Field(default_factory=list)
     last_seen: datetime = Field(default_factory=datetime.utcnow)
+    u_rel: float = 1.0
+    u_cons: float = 1.0
+    u_agr: float = 1.0
+    s_i: float = 0.7
+    feedback_count: int = 0
 
 
 class NodeListResponse(BaseModel):
