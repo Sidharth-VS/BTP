@@ -43,8 +43,16 @@ def query(req: QueryRequest) -> QueryResponse:
     # 1. Register newly detected nodes into TASR state
     for cid, info in flower.get_node_registry().items():
         nid = info.get("node_id", cid)
-        if nid not in tasr_router.trust_states:
-            tasr_router.register_node(nid, [[0.0] * embedder.dimension])
+        if nid not in tasr_router.centroids:
+            centroid = info.get("centroid")
+            profile_centroids = info.get("profile_centroids")
+            doc_embeddings = info.get("doc_embeddings")
+            tasr_router.register_client(
+                client_id=nid,
+                centroid=centroid if centroid is not None else [0.0] * embedder.dimension,
+                doc_embeddings=doc_embeddings,
+                profile_centroids=profile_centroids,
+            )
 
     # 2. Compute query embedding & obtain primary and feedback node targets
     q_emb = embedder.embed_query(req.query)
@@ -110,13 +118,9 @@ def query(req: QueryRequest) -> QueryResponse:
         docs = node_doc_embeddings.get(nid, [])
         scores = [s.score for s in all_sources if s.node_id == nid]
         f_rel[nid] = TASRFeedbackEngine.calculate_relevance(q_emb, docs, chunk_scores=scores)
-        centroids = tasr_router.profile_centroids.get(nid, [])
+        centroids = tasr_router.profile_centroids.get(nid)
         f_cons[nid] = TASRFeedbackEngine.calculate_consistency(q_emb, centroids, docs)
-        node_trust_rel[nid] = (
-            tasr_router.trust_states[nid].u_rel
-            if nid in tasr_router.trust_states
-            else 1.0
-        )
+        node_trust_rel[nid] = tasr_router.reputation.get(nid, 1.0)
 
     f_agr = TASRFeedbackEngine.calculate_cross_client_agreement(
         feedback_targets, node_doc_embeddings, f_rel, node_trust_rel

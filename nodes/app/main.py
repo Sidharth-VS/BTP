@@ -180,7 +180,16 @@ class FedRAGNodeClient(NumPyClient):
     ) -> tuple[float, int, Dict[str, Any]]:
         try:
             count = self.chroma_store.collection.count()
-            return 0.0, count, {"status": "healthy", "node_id": self.node_id}
+            centroid, profile_centroids = self.profiler.compute_profile()
+            all_embs = self.chroma_store.get_all_embeddings()
+            return 0.0, count, {
+                "status": "healthy",
+                "node_id": self.node_id,
+                "domain": self.domain,
+                "centroid": json.dumps(centroid),
+                "profile_centroids": json.dumps(profile_centroids),
+                "doc_embeddings": json.dumps(all_embs[:50]),
+            }
         except Exception as e:
             return 1.0, 0, {"status": "degraded", "node_id": self.node_id, "error": str(e)}
 

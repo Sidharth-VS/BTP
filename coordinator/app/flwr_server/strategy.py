@@ -258,10 +258,23 @@ class FedRAGStrategy(Strategy):
             node_id = str(metrics.get("node_id", client_proxy.cid))
             status = str(metrics.get("status", "unknown"))
             is_new = client_proxy.cid not in self._node_registry
+
+            centroid_str = str(metrics.get("centroid", ""))
+            profile_str = str(metrics.get("profile_centroids", ""))
+            doc_emb_str = str(metrics.get("doc_embeddings", ""))
+
+            centroid = json.loads(centroid_str) if centroid_str else None
+            profile_centroids = json.loads(profile_str) if profile_str else None
+            doc_embeddings = json.loads(doc_emb_str) if doc_emb_str else None
+
             self._node_registry[client_proxy.cid] = {
                 "node_id": node_id,
                 "status": status,
                 "doc_count": eval_res.num_examples,
+                "domain": str(metrics.get("domain", "")),
+                "centroid": centroid,
+                "profile_centroids": profile_centroids,
+                "doc_embeddings": doc_embeddings,
             }
             if is_new:
                 logger.info(
