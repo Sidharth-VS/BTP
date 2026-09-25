@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import List
 import uuid
@@ -26,7 +27,62 @@ class DocumentIndexer:
             return 0
 
         chunks: List[DocumentChunk] = []
-        for file_path in path.glob("**/*.*"):
+
+
+        for file_path in path.glob("**/*"):
+            if not file_path.is_file():
+                continue
+
+            # StackExchange JSONL
+            if file_path.suffix.lower() == ".jsonl":
+                with open(file_path, "r", encoding="utf-8") as f:
+                    for line_number, line in enumerate(f):
+                        line = line.strip()
+
+                        if not line:
+                            continue
+
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        title_body = record.get("title_body", "")
+                        upvoted_answer = record.get("upvoted_answer", "")
+                        domain = record.get("domain", "")
+                        doc_id = record.get("id", line_number)
+
+                        content = f"{title_body}\n\n{upvoted_answer}".strip()
+
+                        if not content:
+                            continue
+
+                        split_texts = self.text_splitter.split_text(content)
+
+                        for idx, text in enumerate(split_texts):
+                            chunk_id = (
+                                f"{node_id}_{file_path.stem}_"
+                                f"{doc_id}_{idx}"
+                            )
+
+                            chunks.append(
+                                DocumentChunk(
+                                    id=chunk_id,
+                                    content=text,
+                                    metadata={
+                                        "source": str(file_path.name),
+                                        "domain": domain,
+                                        "doc_id": doc_id,
+                                        "chunk_index": idx,
+                                        "node_id": node_id,
+                                    },
+                                    node_id=node_id,
+                                )
+                            )
+
+                continue
+
+            # Existing TXT/Markdown behavior
             if file_path.suffix.lower() not in [".txt", ".md"]:
                 continue
 
@@ -34,6 +90,8 @@ class DocumentIndexer:
                 content = f.read()
 
             split_texts = self.text_splitter.split_text(content)
+
+
             for idx, text in enumerate(split_texts):
                 chunk_id = f"{node_id}_{file_path.stem}_{idx}_{uuid.uuid4().hex[:6]}"
                 chunks.append(
