@@ -12,5 +12,6 @@ __pycache__/
 .venv/
 
 workspace/
+nodes/data/node-*/*.jsonl
 
 base
