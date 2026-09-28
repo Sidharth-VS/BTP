@@ -276,6 +276,51 @@ class FedRAGStrategy(Strategy):
             status = str(metrics.get("status", "unknown"))
             is_new = client_proxy.cid not in self._node_registry
 
+            attestation_raw = metrics.get("attestation")
+            fingerprint: Optional[str] = None
+            authorized: bool = True
+
+            # Admission & Hardware Attestation Check
+            if self.admission_manager and self.admission_manager.enabled:
+                if not attestation_raw:
+                    logger.warning(
+                        "🚨 HARD DISCONNECT: Node '%s' (CID: %s) provided no hardware attestation. Evicting...",
+                        node_id, client_proxy.cid,
+                    )
+                    if self.client_manager:
+                        self.client_manager.unregister(client_proxy)
+                    self._node_registry.pop(client_proxy.cid, None)
+                    continue
+
+                try:
+                    attestation_data = json.loads(str(attestation_raw))
+                    from shared.schemas.common import AttestationRequest
+                    req = AttestationRequest(**attestation_data)
+                    admitted, msg, _ = self.admission_manager.attest_and_admit(req)
+                    if not admitted:
+                        logger.warning(
+                            "🚨 HARD DISCONNECT: Sybil or invalid node rejected: '%s' (CID: %s). Reason: %s",
+                            node_id, client_proxy.cid, msg,
+                        )
+                        if self.client_manager:
+                            self.client_manager.unregister(client_proxy)
+                        self._node_registry.pop(client_proxy.cid, None)
+                        continue
+                    fingerprint = req.fingerprint
+                    authorized = True
+                    self.admission_manager.bind_grpc_cid(client_proxy.cid, node_id)
+                except Exception as e:
+                    logger.error(
+                        "🚨 HARD DISCONNECT: Failed to process attestation for node '%s': %s",
+                        node_id, e,
+                    )
+                    if self.client_manager:
+                        self.client_manager.unregister(client_proxy)
+                    self._node_registry.pop(client_proxy.cid, None)
+                    continue
+            else:
+                fingerprint = str(metrics.get("fingerprint")) if metrics.get("fingerprint") else None
+
             centroid_str = str(metrics.get("centroid", ""))
             profile_str = str(metrics.get("profile_centroids", ""))
             doc_emb_str = str(metrics.get("doc_embeddings", ""))
@@ -292,11 +337,13 @@ class FedRAGStrategy(Strategy):
                 "centroid": centroid,
                 "profile_centroids": profile_centroids,
                 "doc_embeddings": doc_embeddings,
+                "hardware_fingerprint": fingerprint,
+                "authorized": authorized,
             }
             if is_new:
                 logger.info(
-                    "✅ Node registered profile | Node ID: '%s' (CID: %s, status: %s, docs: %d)",
-                    node_id, client_proxy.cid, status, eval_res.num_examples,
+                    "✅ Node registered profile | Node ID: '%s' (CID: %s, status: %s, host: %s, docs: %d)",
+                    node_id, client_proxy.cid, status, str(fingerprint)[:12] if fingerprint else "unknown", eval_res.num_examples,
                 )
         return None, {}
 
