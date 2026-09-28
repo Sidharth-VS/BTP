@@ -23,6 +23,61 @@ logger = logging.getLogger("shared.auth.attestation")
 class HardwareCollector:
     """Probes physical and OS-level hardware identifiers on Linux/Unix systems."""
 
+    # --- Attested host-identity mount points -------------------------------
+    # Containers cannot read the host's DMI/UUID tables, so the deployment
+    # bind-mounts the physical host's machine-id into every node container.
+    # These paths are trusted BECAUSE the compose file mounts them read-only.
+    HOST_MACHINE_ID_PATHS = [
+        Path("/host/etc/machine-id"),   # docker-compose: /etc/machine-id:/host/etc/machine-id:ro
+        Path("/etc/host-machine-id"),   # alternative mount convention
+    ]
+
+    # --- Containerization detection ----------------------------------------
+    @staticmethod
+    def is_running_in_container() -> bool:
+        """Detects whether we are inside a container (Docker/Podman/LXC)."""
+        if Path("/.dockerenv").exists() or Path("/run/.containerenv").exists():
+            return True
+        try:
+            with open("/proc/1/cgroup", "r", encoding="utf-8") as f:
+                content = f.read()
+            if "docker" in content or "containerd" in content or "lxc" in content:
+                return True
+        except Exception:
+            pass
+        return False
+
+    @classmethod
+    def get_host_machine_id(cls) -> Optional[str]:
+        """
+        Returns the PHYSICAL host machine-id.
+
+        Priority:
+        1. Attested bind-mount of the host's machine-id (see compose file).
+        2. Bare-metal paths (/etc/machine-id) — correct outside containers.
+
+        Falls back to None inside containers without a mount. Never uses the
+        container's own machine-id, which differs per container and would
+        defeat host-level Sybil detection.
+        """
+        for p in cls.HOST_MACHINE_ID_PATHS:
+            try:
+                if p.exists() and os.access(p, os.R_OK):
+                    content = p.read_text(encoding="utf-8").strip()
+                    if content:
+                        return content.lower()
+            except Exception as e:
+                logger.debug("Could not read host machine-id from %s: %s", p, e)
+
+        if not cls.is_running_in_container():
+            return cls.get_system_machine_id()
+
+        logger.warning(
+            "Running in a container without an attested host machine-id mount — "
+            "host identity degraded (mount /etc/machine-id:/host/etc/machine-id:ro)"
+        )
+        return None
+
     @staticmethod
     def get_dmi_product_uuid() -> Optional[str]:
         """Reads motherboard / system product UUID from /sys/class/dmi/id/product_uuid."""
@@ -57,13 +112,47 @@ class HardwareCollector:
                 logger.debug("Could not read machine-id from %s: %s", p, e)
         return None
 
-    @staticmethod
-    def get_primary_mac_address() -> str:
-        """Retrieves the primary network interface hardware MAC address."""
-        # uuid.getnode() returns the 48-bit integer hardware address
+    # Virtual / container interfaces whose MACs are NOT host identity.
+    _VIRTUAL_IFACE_PREFIXES = (
+        "veth",    # docker container links — unique per container!
+        "lo", "docker0", "br-", "virbr", "vmnet", "tun", "tap",
+        "wg", "tailscale",
+    )
+
+    @classmethod
+    def get_physical_mac_address(cls) -> Optional[str]:
+        """
+        Retrieves the first PHYSICAL NIC's MAC address.
+
+        Virtual interfaces (docker veth, loopback, bridges) are excluded —
+        inside a container, uuid.getnode() resolves to the container's own
+        veth MAC, which differs per container and previously fragmented the
+        host fingerprint.
+        """
+        try:
+            net_dir = Path("/sys/class/net")
+            if net_dir.exists():
+                for iface in sorted(net_dir.iterdir()):
+                    name = iface.name
+                    if name.startswith(cls._VIRTUAL_IFACE_PREFIXES):
+                        continue
+                    # Double-check via sysfs: interfaces without a device link
+                    # are virtual (e.g. lo).
+                    if not (iface / "device").exists():
+                        continue
+                    addr_file = iface / "address"
+                    if addr_file.exists():
+                        mac = addr_file.read_text(encoding="utf-8").strip().lower()
+                        if mac and mac != "00:00:00:00:00:00":
+                            return mac
+        except Exception as e:
+            logger.debug("Could not enumerate network interfaces: %s", e)
+
+        # Bare-metal fallback (also covers macOS where /sys/class/net is absent)
         node_int = uuid.getnode()
-        mac = ":".join(f"{(node_int >> ele) & 0xFF:02x}" for ele in range(40, -1, -8))
-        return mac.lower()
+        if node_int & 0x010000000000:  # locally-administered bit set → virtualized
+            logger.debug("uuid.getnode() returned a locally-administered (virtual) MAC")
+        return ":".join(f"{(node_int >> ele) & 0xFF:02x}" for ele in range(40, -1, -8)).lower()
 
     @staticmethod
     def get_cpu_info() -> Dict[str, Any]:
@@ -100,8 +189,8 @@ class HardwareCollector:
         """Gathers all available hardware identifiers."""
         return {
             "dmi_uuid": cls.get_dmi_product_uuid(),
-            "machine_id": cls.get_system_machine_id(),
-            "mac_address": cls.get_primary_mac_address(),
+            "machine_id": cls.get_host_machine_id(),
+            "mac_address": cls.get_physical_mac_address(),
             "cpu": cls.get_cpu_info(),
         }
 
@@ -116,13 +205,24 @@ def generate_host_fingerprint(raw_identifiers: Optional[Dict[str, Any]] = None) 
     # Build canonical representation with ordered keys
     canonical_components = {
         "dmi_uuid": raw_identifiers.get("dmi_uuid") or "dmi-unavailable",
-        "machine_id": raw_identifiers.get("machine_id") or "machine-id-unavailable",
-        "mac_address": raw_identifiers.get("mac_address") or "mac-unavailable",
-        "cpu_model": raw_identifiers.get("cpu", {}).get("model", ""),
-        "cpu_cores": raw_identifiers.get("cpu", {}).get("cores", 1),
-        "cpu_arch": raw_identifiers.get("cpu", {}).get("architecture", ""),
-        "cpu_stepping": raw_identifiers.get("cpu", {}).get("stepping", ""),
+        "machine_id": raw_identifiers.get("machine_id") or "machine-id-unavailable"
+        # "mac_address": raw_identifiers.get("mac_address") or "mac-unavailable",
+        # "cpu_model": raw_identifiers.get("cpu", {}).get("model", ""),
+        # "cpu_cores": raw_identifiers.get("cpu", {}).get("cores", 1),
+        # "cpu_arch": raw_identifiers.get("cpu", {}).get("architecture", ""),
+        # "cpu_stepping": raw_identifiers.get("cpu", {}).get("stepping", ""),
     }
+
+    # Visibility into fingerprint composition — makes misconfigured identity
+    # sources (e.g. containers without the machine-id mount) diagnosable.
+    logger.info(
+        "Host fingerprint composition: dmi=%s machine_id=%s mac=%s cpu=%s/%s",
+        (canonical_components["dmi_uuid"] or "")[:12],
+        canonical_components["machine_id"][:12]
+        # canonical_components["mac_address"],
+        # canonical_components["cpu_arch"],
+        # canonical_components["cpu_cores"],
+    )
 
     serialized = json.dumps(canonical_components, sort_keys=True)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()

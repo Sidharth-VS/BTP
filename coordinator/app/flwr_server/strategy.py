@@ -12,6 +12,7 @@ import queue
 import threading
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
+from coordinator.app.flwr_server.admission import NodeAdmissionManager
 
 import numpy as np
 from flwr.compat.common.typing import (
@@ -99,8 +100,7 @@ class QueryBroker:
             logger.warning("publish_result: no waiter for query_id '%s'", query_id)
 
 
-if TYPE_CHECKING:
-    from coordinator.app.flwr_server.admission import NodeAdmissionManager
+
 
 class FedRAGStrategy(Strategy):
     """

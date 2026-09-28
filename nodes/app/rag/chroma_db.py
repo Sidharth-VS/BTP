@@ -84,4 +84,9 @@ class ChromaStore:
     def get_all_embeddings(self) -> List[List[float]]:
         """Fetches all indexed vector embeddings to calculate registration centroids."""
         data = self.collection.get(include=["embeddings"])
-        return data.get("embeddings") or []
+        embeddings = data.get("embeddings") or []
+        # chromadb >= 1.x returns numpy arrays; flatten to plain lists so the
+        # values are JSON-serializable (json.dumps fails on ndarray).
+        return [
+            e.tolist() if hasattr(e, "tolist") else list(e) for e in embeddings
+        ]
