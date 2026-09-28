@@ -99,18 +99,20 @@ class FedRAGNodeClient(NumPyClient):
         domain: str,
         chroma_store: ChromaStore,
         profiler: NodeProfiler,
+        attestation_payload: Optional[Any] = None,
     ) -> None:
         self.node_id = node_id
         self.domain = domain
         self.chroma_store = chroma_store
         self.profiler = profiler
+        self.attestation_payload = attestation_payload
 
     def get_properties(self, config: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("Sending registration profile to coordinator")
         try:
             centroid, profile_centroids = self.profiler.compute_profile()
             all_embs = self.chroma_store.get_all_embeddings()
-            return {
+            props = {
                 "node_id": self.node_id,
                 "domain": self.domain,
                 "capabilities": json.dumps(["chromadb", "retrieval"]),
@@ -119,6 +121,10 @@ class FedRAGNodeClient(NumPyClient):
                 "doc_embeddings_sample": json.dumps(all_embs[:50]),
                 "doc_count": str(self.chroma_store.collection.count()),
             }
+            if self.attestation_payload:
+                props["attestation"] = json.dumps(self.attestation_payload.to_dict())
+                props["fingerprint"] = self.attestation_payload.fingerprint
+            return props
         except Exception as e:
             logger.error("get_properties error: %s", e)
             return {"error": str(e), "node_id": self.node_id}

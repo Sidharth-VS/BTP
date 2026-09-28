@@ -42,3 +42,10 @@ tasr:
 
 trust_db:
   path: "./trust_scores.db"     # SQLite database for trust persistence
+
+# Hardware Attestation & Sybil Defense
+attestation:
+  enabled: true
+  max_nodes_per_host: 1
+  freshness_window_seconds: 300
+  storage_path: "workspace/coordinator/attestation_registry.json"
