@@ -99,13 +99,24 @@ class QueryBroker:
             logger.warning("publish_result: no waiter for query_id '%s'", query_id)
 
 
+if TYPE_CHECKING:
+    from coordinator.app.flwr_server.admission import NodeAdmissionManager
+
 class FedRAGStrategy(Strategy):
     """
-    Custom Flower Strategy supporting targeted TASR routing and health checking.
+    Custom Flower Strategy supporting targeted TASR routing, health checking,
+    and hardware attestation hard-disconnect enforcement.
     """
 
-    def __init__(self, broker: QueryBroker) -> None:
+    def __init__(
+        self,
+        broker: QueryBroker,
+        admission_manager: Optional["NodeAdmissionManager"] = None,
+        client_manager: Optional[ClientManager] = None,
+    ) -> None:
         self.broker = broker
+        self.admission_manager = admission_manager
+        self.client_manager = client_manager
         self._current_query: Optional[dict] = None
         self._node_registry: Dict[str, dict] = {}
 
@@ -143,17 +154,23 @@ class FedRAGStrategy(Strategy):
         }
         fit_ins = FitIns(parameters=parameters, config=fit_config)
 
-        # Targeted dispatch logic with cold-start protection
+        # Targeted dispatch logic with authorization check
         dispatched: List[Tuple[ClientProxy, FitIns]] = []
         for cid, proxy in clients.items():
             node_info = self._node_registry.get(cid)
 
-            # Cold-start fallback: include node if not yet registered via health checks
             if not node_info:
-                dispatched.append((proxy, fit_ins))
+                # If attestation is enabled, don't dispatch to unverified nodes
+                if not (self.admission_manager and self.admission_manager.enabled):
+                    dispatched.append((proxy, fit_ins))
                 continue
 
             node_id = node_info.get("node_id", cid)
+            if self.admission_manager and not self.admission_manager.is_authorized(node_id):
+                continue
+            if not node_info.get("authorized", True):
+                continue
+
             if not target_nodes or node_id in target_nodes:
                 dispatched.append((proxy, fit_ins))
 

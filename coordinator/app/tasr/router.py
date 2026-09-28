@@ -158,8 +158,9 @@ class TrustAwareRouter:
         centroid: Union[np.ndarray, List[float]],
         doc_embeddings: Optional[Union[np.ndarray, List[List[float]]]] = None,
         profile_centroids: Optional[Union[np.ndarray, List[List[float]]]] = None,
+        initial_trust_state: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Register a client profile and feedback evidence pool."""
+        """Register a client profile and feedback evidence pool, restoring trust state if provided."""
         c_arr = np.asarray(centroid, dtype=np.float64)
         self.centroids[client_id] = self._normalize(c_arr)
 
@@ -177,19 +178,53 @@ class TrustAwareRouter:
             profile = np.asarray(profile_centroids, dtype=np.float64)
         self.profile_centroids[client_id] = self._normalize(profile)
 
-        self.reputation[client_id] = 1.0
-        self.consistency_trust[client_id] = 1.0
-        self.agreement_trust[client_id] = 1.0
-        self.feedback_count[client_id] = 0
+        if initial_trust_state:
+            self.reputation[client_id] = float(initial_trust_state.get("u_rel", 1.0))
+            self.consistency_trust[client_id] = float(initial_trust_state.get("u_cons", 1.0))
+            self.agreement_trust[client_id] = float(initial_trust_state.get("u_agr", 1.0))
+            self.feedback_count[client_id] = int(initial_trust_state.get("feedback_count", 0))
 
-        self.reputation_history[client_id] = [1.0]
-        self.consistency_history[client_id] = [1.0]
-        self.agreement_history[client_id] = [1.0]
-        self.feedback_history[client_id] = []
-        self.rel_feedback_history[client_id] = []
-        self.cons_feedback_history[client_id] = []
-        self.agr_feedback_history[client_id] = []
-        logger.info("TASR: Registered client '%s'", client_id)
+            self.reputation_history[client_id] = list(initial_trust_state.get("reputation_history") or [self.reputation[client_id]])
+            self.consistency_history[client_id] = list(initial_trust_state.get("consistency_history") or [self.consistency_trust[client_id]])
+            self.agreement_history[client_id] = list(initial_trust_state.get("agreement_history") or [self.agreement_trust[client_id]])
+            self.feedback_history[client_id] = list(initial_trust_state.get("feedback_history") or [])
+            self.rel_feedback_history[client_id] = list(initial_trust_state.get("rel_feedback_history") or [])
+            self.cons_feedback_history[client_id] = list(initial_trust_state.get("cons_feedback_history") or [])
+            self.agr_feedback_history[client_id] = list(initial_trust_state.get("agr_feedback_history") or [])
+            logger.info(
+                "TASR: Restored historical trust for node '%s' (u_rel=%.3f, count=%d)",
+                client_id, self.reputation[client_id], self.feedback_count[client_id]
+            )
+        else:
+            self.reputation[client_id] = 1.0
+            self.consistency_trust[client_id] = 1.0
+            self.agreement_trust[client_id] = 1.0
+            self.feedback_count[client_id] = 0
+
+            self.reputation_history[client_id] = [1.0]
+            self.consistency_history[client_id] = [1.0]
+            self.agreement_history[client_id] = [1.0]
+            self.feedback_history[client_id] = []
+            self.rel_feedback_history[client_id] = []
+            self.cons_feedback_history[client_id] = []
+            self.agr_feedback_history[client_id] = []
+            logger.info("TASR: Registered client '%s'", client_id)
+
+    def export_trust_state(self, client_id: Any) -> Dict[str, Any]:
+        """Exports current trust state components for persistence."""
+        return {
+            "u_rel": float(self.reputation.get(client_id, 1.0)),
+            "u_cons": float(self.consistency_trust.get(client_id, 1.0)),
+            "u_agr": float(self.agreement_trust.get(client_id, 1.0)),
+            "feedback_count": int(self.feedback_count.get(client_id, 0)),
+            "reputation_history": list(self.reputation_history.get(client_id, [])),
+            "consistency_history": list(self.consistency_history.get(client_id, [])),
+            "agreement_history": list(self.agreement_history.get(client_id, [])),
+            "feedback_history": list(self.feedback_history.get(client_id, [])),
+            "rel_feedback_history": list(self.rel_feedback_history.get(client_id, [])),
+            "cons_feedback_history": list(self.cons_feedback_history.get(client_id, [])),
+            "agr_feedback_history": list(self.agr_feedback_history.get(client_id, [])),
+        }
 
     def register_node(
         self,

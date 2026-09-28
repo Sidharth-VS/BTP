@@ -46,6 +46,9 @@ class LoggingClientManager(SimpleClientManager):
             if node_info:
                 node_id = node_info.get("node_id")
 
+        if self.strategy and hasattr(self.strategy, "admission_manager") and self.strategy.admission_manager:
+            self.strategy.admission_manager.release_node(node_id=node_id, cid=cid)
+
         super().unregister(client)
 
         if existed:
