@@ -5,9 +5,14 @@ import random
 import shutil
 
 from datasets import load_dataset
+from huggingface_hub import hf_hub_download
 
 
 DATASET_NAME = "flax-sentence-embeddings/stackexchange_title_best_voted_answer_jsonl"
+
+# The dataset repo still ships a legacy loading script, which modern
+# `datasets` refuses to run. Use HF's auto-converted parquet branch.
+PARQUET_REVISION = "refs/convert/parquet"
 
 DOMAIN_LIST = [
     "electronics",
@@ -41,7 +46,9 @@ SEED = 42
 # and must not be overwritten.
 MAX_NODES = 15
 
-OUTPUT_DIR = Path("nodes") / "data"
+# Where node data lands: <workspace>/data/node-<N>/data.jsonl
+# (overridable via the optional workspace_dir CLI argument)
+OUTPUT_DIR = Path("workspace") / "data"
 
 
 def assign_domains_to_nodes():
@@ -63,17 +70,24 @@ def assign_domains_to_nodes():
 
 
 def load_domain(domain):
-    """Load one StackExchange domain from HuggingFace."""
+    """Load one StackExchange domain from HuggingFace's parquet conversion."""
 
     print(f"Loading domain: {domain}")
 
-    dataset = load_dataset(
-        DATASET_NAME,
-        name=domain,
-        trust_remote_code=True,
+    parquet_path = hf_hub_download(
+        repo_id=DATASET_NAME,
+        repo_type="dataset",
+        filename=f"{domain}/train/0000.parquet",
+        revision=PARQUET_REVISION,
     )
 
-    return dataset["train"]
+    dataset = load_dataset(
+        "parquet",
+        data_files=parquet_path,
+        split="train",
+    )
+
+    return dataset
 
 
 def prepare_node_directory(node_id):
@@ -181,17 +195,20 @@ def main():
 
 if __name__ == "__main__":
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
 
         print(
             "Usage: "
             "python scripts/prepare_stackexchange.py "
-            "<number_of_nodes>"
+            "<number_of_nodes> [workspace_dir]"
         )
 
         sys.exit(1)
 
     NUM_NODES = int(sys.argv[1])
+
+    if len(sys.argv) == 3:
+        OUTPUT_DIR = Path(sys.argv[2]) / "data"
 
     if NUM_NODES <= 0:
 
