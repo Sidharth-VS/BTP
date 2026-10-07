@@ -16,7 +16,7 @@ import shutil
 import sys
 
 
-SOURCE_DIR = Path("dataset") / "textbooks" / "en"
+SOURCE_DIR = Path("dataset") / "data_clean" / "textbooks" / "en"
 
 TEXTBOOK_EXTENSION = ".txt"
 

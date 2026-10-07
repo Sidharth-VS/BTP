@@ -32,24 +32,32 @@ DOMAIN_LIST = [
     "photo",
 ]
 
-DOMAINS_PER_NODE = 3
+DOMAINS_PER_NODE = 1
 DOCS_PER_DOMAIN = 100
 SEED = 42
+
+# StackExchange data goes to node-1..node-15 only.
+# node-16+ hold textbook data (scripts/assign_textbooks.py)
+# and must not be overwritten.
+MAX_NODES = 15
 
 OUTPUT_DIR = Path("nodes") / "data"
 
 
 def assign_domains_to_nodes():
-    """Assign 3 domains to each node."""
+    """Assign 1 distinct domain to each of nodes 1..NUM_NODES."""
+
+    rng = random.Random(SEED)
+    shuffled = list(DOMAIN_LIST)
+    rng.shuffle(shuffled)
 
     assignments = {}
 
     for node_id in range(NUM_NODES):
-        rng = random.Random(SEED + node_id)
-        assignments[node_id] = rng.sample(
-            DOMAIN_LIST,
-            DOMAINS_PER_NODE
-        )
+        start = node_id * DOMAINS_PER_NODE
+        assignments[node_id] = shuffled[
+            start : start + DOMAINS_PER_NODE
+        ]
 
     return assignments
 
@@ -83,7 +91,7 @@ def prepare_node_directory(node_id):
 
 def save_node_data(node_id, domains, domain_datasets):
     """
-    Combine data from all 3 domains into one data.jsonl file.
+    Write the node's assigned domain(s) into one data.jsonl file.
     """
 
     node_dir = prepare_node_directory(node_id)
@@ -188,6 +196,14 @@ if __name__ == "__main__":
     if NUM_NODES <= 0:
 
         print("ERROR: number_of_nodes must be greater than 0.")
+
+        sys.exit(1)
+
+    if NUM_NODES > MAX_NODES:
+        print(
+            f"ERROR: number_of_nodes must be <= {MAX_NODES} "
+            f"(node-{MAX_NODES + 1}+ hold textbook data)."
+        )
 
         sys.exit(1)
 
