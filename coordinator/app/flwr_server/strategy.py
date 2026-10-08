@@ -12,6 +12,7 @@ import queue
 import threading
 import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
+from coordinator.app.flwr_server.admission import NodeAdmissionManager
 
 import numpy as np
 from flwr.compat.common.typing import (
@@ -99,13 +100,23 @@ class QueryBroker:
             logger.warning("publish_result: no waiter for query_id '%s'", query_id)
 
 
+
+
 class FedRAGStrategy(Strategy):
     """
-    Custom Flower Strategy supporting targeted TASR routing and health checking.
+    Custom Flower Strategy supporting targeted TASR routing, health checking,
+    and hardware attestation hard-disconnect enforcement.
     """
 
-    def __init__(self, broker: QueryBroker) -> None:
+    def __init__(
+        self,
+        broker: QueryBroker,
+        admission_manager: Optional["NodeAdmissionManager"] = None,
+        client_manager: Optional[ClientManager] = None,
+    ) -> None:
         self.broker = broker
+        self.admission_manager = admission_manager
+        self.client_manager = client_manager
         self._current_query: Optional[dict] = None
         self._node_registry: Dict[str, dict] = {}
 
@@ -143,17 +154,23 @@ class FedRAGStrategy(Strategy):
         }
         fit_ins = FitIns(parameters=parameters, config=fit_config)
 
-        # Targeted dispatch logic with cold-start protection
+        # Targeted dispatch logic with authorization check
         dispatched: List[Tuple[ClientProxy, FitIns]] = []
         for cid, proxy in clients.items():
             node_info = self._node_registry.get(cid)
 
-            # Cold-start fallback: include node if not yet registered via health checks
             if not node_info:
-                dispatched.append((proxy, fit_ins))
+                # If attestation is enabled, don't dispatch to unverified nodes
+                if not (self.admission_manager and self.admission_manager.enabled):
+                    dispatched.append((proxy, fit_ins))
                 continue
 
             node_id = node_info.get("node_id", cid)
+            if self.admission_manager and not self.admission_manager.is_authorized(node_id):
+                continue
+            if not node_info.get("authorized", True):
+                continue
+
             if not target_nodes or node_id in target_nodes:
                 dispatched.append((proxy, fit_ins))
 
@@ -259,6 +276,51 @@ class FedRAGStrategy(Strategy):
             status = str(metrics.get("status", "unknown"))
             is_new = client_proxy.cid not in self._node_registry
 
+            attestation_raw = metrics.get("attestation")
+            fingerprint: Optional[str] = None
+            authorized: bool = True
+
+            # Admission & Hardware Attestation Check
+            if self.admission_manager and self.admission_manager.enabled:
+                if not attestation_raw:
+                    logger.warning(
+                        "🚨 HARD DISCONNECT: Node '%s' (CID: %s) provided no hardware attestation. Evicting...",
+                        node_id, client_proxy.cid,
+                    )
+                    if self.client_manager:
+                        self.client_manager.unregister(client_proxy)
+                    self._node_registry.pop(client_proxy.cid, None)
+                    continue
+
+                try:
+                    attestation_data = json.loads(str(attestation_raw))
+                    from shared.schemas.common import AttestationRequest
+                    req = AttestationRequest(**attestation_data)
+                    admitted, msg, _ = self.admission_manager.attest_and_admit(req)
+                    if not admitted:
+                        logger.warning(
+                            "🚨 HARD DISCONNECT: Sybil or invalid node rejected: '%s' (CID: %s). Reason: %s",
+                            node_id, client_proxy.cid, msg,
+                        )
+                        if self.client_manager:
+                            self.client_manager.unregister(client_proxy)
+                        self._node_registry.pop(client_proxy.cid, None)
+                        continue
+                    fingerprint = req.fingerprint
+                    authorized = True
+                    self.admission_manager.bind_grpc_cid(client_proxy.cid, node_id)
+                except Exception as e:
+                    logger.error(
+                        "🚨 HARD DISCONNECT: Failed to process attestation for node '%s': %s",
+                        node_id, e,
+                    )
+                    if self.client_manager:
+                        self.client_manager.unregister(client_proxy)
+                    self._node_registry.pop(client_proxy.cid, None)
+                    continue
+            else:
+                fingerprint = str(metrics.get("fingerprint")) if metrics.get("fingerprint") else None
+
             centroid_str = str(metrics.get("centroid", ""))
             profile_str = str(metrics.get("profile_centroids", ""))
             doc_emb_str = str(metrics.get("doc_embeddings", ""))
@@ -275,11 +337,13 @@ class FedRAGStrategy(Strategy):
                 "centroid": centroid,
                 "profile_centroids": profile_centroids,
                 "doc_embeddings": doc_embeddings,
+                "hardware_fingerprint": fingerprint,
+                "authorized": authorized,
             }
             if is_new:
                 logger.info(
-                    "✅ Node registered profile | Node ID: '%s' (CID: %s, status: %s, docs: %d)",
-                    node_id, client_proxy.cid, status, eval_res.num_examples,
+                    "✅ Node registered profile | Node ID: '%s' (CID: %s, status: %s, host: %s, docs: %d)",
+                    node_id, client_proxy.cid, status, str(fingerprint)[:12] if fingerprint else "unknown", eval_res.num_examples,
                 )
         return None, {}
 

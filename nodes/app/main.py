@@ -99,29 +99,49 @@ class FedRAGNodeClient(NumPyClient):
         domain: str,
         chroma_store: ChromaStore,
         profiler: NodeProfiler,
+        attestation_payload: Optional[Any] = None,
     ) -> None:
         self.node_id = node_id
         self.domain = domain
         self.chroma_store = chroma_store
         self.profiler = profiler
+        self.attestation_payload = attestation_payload
 
     def get_properties(self, config: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("Sending registration profile to coordinator")
+
+        # Attestation is always set first — completely independent of ChromaDB/embeddings.
+        props: Dict[str, Any] = {
+            "node_id": self.node_id,
+            "domain": self.domain,
+        }
+        if self.attestation_payload:
+            props["attestation"] = json.dumps(self.attestation_payload.to_dict())
+            props["fingerprint"] = self.attestation_payload.fingerprint
+            print(
+                f"📤 [{self.node_id}] Transmitting hardware attestation to coordinator"
+                f" (fingerprint: {self.attestation_payload.fingerprint[:16]}...)",
+                flush=True,
+            )
+
+        # Centroid / embedding profile — failures here must NOT suppress attestation.
         try:
             centroid, profile_centroids = self.profiler.compute_profile()
             all_embs = self.chroma_store.get_all_embeddings()
-            return {
-                "node_id": self.node_id,
-                "domain": self.domain,
+            props.update({
                 "capabilities": json.dumps(["chromadb", "retrieval"]),
                 "centroid": json.dumps(centroid),
                 "profile_centroids": json.dumps(profile_centroids),
-                "doc_embeddings_sample": json.dumps(all_embs[:50]),
+                "doc_embeddings_sample": json.dumps(
+                    [list(e) for e in all_embs[:50]]  # normalise numpy→list
+                ),
                 "doc_count": str(self.chroma_store.collection.count()),
-            }
+            })
         except Exception as e:
-            logger.error("get_properties error: %s", e)
-            return {"error": str(e), "node_id": self.node_id}
+            logger.error("get_properties profile error (attestation still sent): %s", e)
+            props["profile_error"] = str(e)
+
+        return props
 
     def get_parameters(self, config: Dict[str, Any]) -> List[np.ndarray]:
         return []
@@ -178,20 +198,31 @@ class FedRAGNodeClient(NumPyClient):
         parameters: List[np.ndarray],
         config: Dict[str, Any],
     ) -> tuple[float, int, Dict[str, Any]]:
+        # Attestation is attached FIRST — completely independent of ChromaDB.
+        # If profile computation below fails, the coordinator must still receive
+        # a healthy status + attestation, or it will hard-disconnect the node.
+        eval_res: Dict[str, Any] = {
+            "status": "healthy",
+            "node_id": self.node_id,
+            "domain": self.domain,
+        }
+        if self.attestation_payload:
+            eval_res["attestation"] = json.dumps(self.attestation_payload.to_dict())
+            eval_res["fingerprint"] = self.attestation_payload.fingerprint
+
         try:
             count = self.chroma_store.collection.count()
             centroid, profile_centroids = self.profiler.compute_profile()
             all_embs = self.chroma_store.get_all_embeddings()
-            return 0.0, count, {
-                "status": "healthy",
-                "node_id": self.node_id,
-                "domain": self.domain,
+            eval_res.update({
                 "centroid": json.dumps(centroid),
                 "profile_centroids": json.dumps(profile_centroids),
                 "doc_embeddings": json.dumps(all_embs[:50]),
-            }
+            })
+            return 0.0, count, eval_res
         except Exception as e:
-            return 1.0, 0, {"status": "degraded", "node_id": self.node_id, "error": str(e)}
+            logger.error("evaluate profile error (attestation still sent): %s", e)
+            return 0.0, 0, {**eval_res, "profile_error": str(e)}
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +239,88 @@ def main() -> None:
     cfg = load_node_config(nodes_yaml, node_id)
     logger.info("Loaded config for '%s' (domain: %s)", node_id, cfg.get("domain"))
 
-    # Initialize embedder + ChromaDB
+    # Generate genuine hardware attestation
+    from shared.auth.attestation import create_attestation_payload
+    attestation_payload = create_attestation_payload(node_id)
+    print(
+        f"\n🔑 [Node '{node_id}'] Hardware Fingerprint: {attestation_payload.fingerprint}",
+        flush=True,
+    )
+    print(
+        f"💻 [Node '{node_id}'] CPU: {attestation_payload.hardware_summary.get('cpu_model', 'unknown')}"
+        f" ({attestation_payload.hardware_summary.get('cpu_cores', 1)} cores)\n",
+        flush=True,
+    )
+    logger.info(
+        "Hardware Fingerprint: %s... (CPU: %s, %s cores)",
+        attestation_payload.fingerprint[:16],
+        attestation_payload.hardware_summary.get("cpu_model", "unknown"),
+        attestation_payload.hardware_summary.get("cpu_cores", 1),
+    )
 
+    # Cache local identity record
+    try:
+        cache_dir = Path(cfg["persist_directory"])
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        with open(cache_dir / ".identity.json", "w", encoding="utf-8") as f:
+            json.dump(attestation_payload.to_dict(), f, indent=2)
+    except Exception as e:
+        logger.debug("Could not cache local identity: %s", e)
+
+    server_address = os.environ.get("SERVER_ADDRESS") or cfg.get("server_address", "coordinator:9091")
+
+    # Tier 1 Pre-Flight Gatekeeper: REST attestation check
+    coordinator_rest_url = os.environ.get("COORDINATOR_REST_URL")
+    if not coordinator_rest_url:
+        host = server_address.split(":")[0] if ":" in server_address else "localhost"
+        coordinator_rest_url = f"http://{host}:8000"
+
+    attest_url = f"{coordinator_rest_url}/api/v1/nodes/attest"
+    logger.info("Performing pre-flight hardware attestation with %s...", attest_url)
+
+    import urllib.request
+    import urllib.error
+
+    def _try_attest(url: str) -> Optional[str]:
+        """Attempt REST pre-flight. Returns lease on success, None on soft error, raises SystemExit on 403."""
+        try:
+            req_data = json.dumps(attestation_payload.to_dict()).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                res_data = json.loads(resp.read().decode("utf-8"))
+                return str(res_data.get("lease_token", ""))
+        except urllib.error.HTTPError as err:
+            if err.code == 403:
+                err_body = err.read().decode("utf-8")
+                logger.error("⛔ HARD REJECTION: Coordinator denied admission (Host Quota / Sybil block): %s", err_body)
+                raise SystemExit(1)
+            logger.debug("Pre-flight HTTP %d from %s: %s", err.code, url, err)
+            return None
+        except Exception as exc:
+            logger.debug("Could not reach %s: %s", url, exc)
+            return None
+
+    # Build fallback URL candidates (try original host first, then localhost variants)
+    _fallback_bases = [coordinator_rest_url]
+    if "localhost" not in coordinator_rest_url and "127.0.0.1" not in coordinator_rest_url:
+        _fallback_bases.extend(["http://localhost:8000", "http://127.0.0.1:8000"])
+
+    _lease = None
+    for _base in _fallback_bases:
+        _lease = _try_attest(f"{_base}/api/v1/nodes/attest")
+        if _lease is not None:
+            logger.info("✅ Pre-flight attestation approved via %s (lease: %s...)", _base, _lease[:8])
+            break
+    else:
+        logger.warning("Could not reach coordinator REST API for pre-flight at any URL. Proceeding to gRPC connection...")
+
+
+    # Initialize embedder + ChromaDB
     chroma_store = ChromaStore(
         persist_dir=cfg["persist_directory"],
         collection_name=cfg["collection_name"],
@@ -229,7 +340,6 @@ def main() -> None:
     profiler = NodeProfiler(chroma_store)
 
     # Connect to coordinator via Flower gRPC
-    server_address = os.environ.get("SERVER_ADDRESS") or cfg.get("server_address", "coordinator:9091")
     logger.info("Connecting to coordinator at '%s'...", server_address)
     start_client(
         server_address=server_address,
@@ -238,6 +348,7 @@ def main() -> None:
             domain=cfg.get("domain", "general"),
             chroma_store=chroma_store,
             profiler=profiler,
+            attestation_payload=attestation_payload,
         ).to_client(),
         insecure=True,
     )

@@ -16,3 +16,7 @@ def get_flower_server() -> FlowerServer:
     if _flower_server is None:
         raise RuntimeError("FlowerServer has not been initialized yet")
     return _flower_server
+
+
+def get_admission_manager():
+    return get_flower_server().admission_manager

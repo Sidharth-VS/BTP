@@ -56,6 +56,8 @@ services:
       - ./nodes:/app/nodes
       - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+      # Attested host identity: all node containers see the SAME physical host id
+      - /etc/machine-id:/host/etc/machine-id:ro
     depends_on:
       coordinator:
         condition: service_healthy
@@ -82,6 +84,8 @@ services:
       - ./nodes:/app/nodes
       - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+      # Attested host identity: all node containers see the SAME physical host id
+      - /etc/machine-id:/host/etc/machine-id:ro
     depends_on:
       coordinator:
         condition: service_healthy
@@ -108,6 +112,8 @@ services:
       - ./nodes:/app/nodes
       - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+      # Attested host identity: all node containers see the SAME physical host id
+      - /etc/machine-id:/host/etc/machine-id:ro
     depends_on:
       coordinator:
         condition: service_healthy
@@ -134,6 +140,8 @@ services:
       - ./nodes:/app/nodes
       - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+      # Attested host identity: all node containers see the SAME physical host id
+      - /etc/machine-id:/host/etc/machine-id:ro
     depends_on:
       coordinator:
         condition: service_healthy
@@ -147,6 +155,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest  
     container_name: fedrag-node-5
     environment:
       - NODE_ID=node-5
@@ -159,6 +168,8 @@ services:
       - ./nodes:/app/nodes
       - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+      # Attested host identity: all node containers see the SAME physical host id
+      - /etc/machine-id:/host/etc/machine-id:ro
     depends_on:
       coordinator:
         condition: service_healthy
@@ -172,6 +183,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest
     container_name: fedrag-node-6
     environment:
       - NODE_ID=node-6
@@ -184,6 +196,8 @@ services:
       - ./nodes:/app/nodes
       - ./shared:/app/shared
       - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
+      # Attested host identity: all node containers see the SAME physical host id
+      - /etc/machine-id:/host/etc/machine-id:ro
     depends_on:
       coordinator:
         condition: service_healthy

@@ -11,6 +11,7 @@ from typing import Optional
 
 from flwr.server import ServerConfig, start_server
 
+from coordinator.app.flwr_server.admission import NodeAdmissionManager
 from coordinator.app.flwr_server.client_manager import LoggingClientManager
 from coordinator.app.flwr_server.strategy import FedRAGStrategy, QueryBroker
 
@@ -20,20 +21,26 @@ logging.getLogger("flwr").setLevel(logging.WARNING)
 
 class FlowerServer:
     """
-    Wraps flwr.server.start_server() with custom LoggingClientManager and an
-    infinite restart loop so the coordinator runs indefinitely.
+    Wraps flwr.server.start_server() with custom LoggingClientManager,
+    NodeAdmissionManager, and an infinite restart loop so the coordinator runs indefinitely.
     """
 
     def __init__(
         self,
         server_address: str = "0.0.0.0:9091",
         num_rounds: int = sys.maxsize,
+        admission_manager: Optional[NodeAdmissionManager] = None,
     ) -> None:
         self.server_address = server_address
         self.num_rounds = num_rounds
         self.broker = QueryBroker()
-        self.strategy = FedRAGStrategy(broker=self.broker)
+        self.admission_manager = admission_manager or NodeAdmissionManager()
+        self.strategy = FedRAGStrategy(
+            broker=self.broker,
+            admission_manager=self.admission_manager,
+        )
         self.client_manager = LoggingClientManager(strategy=self.strategy)
+        self.strategy.client_manager = self.client_manager
         self._thread: Optional[threading.Thread] = None
 
     def start_background(self) -> None:

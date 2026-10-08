@@ -43,6 +43,10 @@ class CoordinatorConfig(BaseSettings):
     api_port: int = 8000
     flower_server_address: str = "0.0.0.0:9091"
     flower_num_rounds: int = sys.maxsize
+    attestation_enabled: bool = True
+    max_nodes_per_host: int = 1
+    attestation_freshness_seconds: float = 300.0
+    attestation_storage_path: str = "workspace/coordinator/attestation_registry.json"
 
 
 def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig:
@@ -56,6 +60,17 @@ def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig
     flat["api_port"] = raw.get("server", {}).get("port", 8000)
     flat["flower_server_address"] = raw.get("flower", {}).get("server_address", "0.0.0.0:9091")
     flat["flower_num_rounds"] = raw.get("flower", {}).get("num_rounds", sys.maxsize)
+
+    att_cfg = raw.get("attestation", {})
+    if "enabled" in att_cfg:
+        flat["attestation_enabled"] = att_cfg["enabled"]
+    if "max_nodes_per_host" in att_cfg:
+        flat["max_nodes_per_host"] = att_cfg["max_nodes_per_host"]
+    if "freshness_window_seconds" in att_cfg:
+        flat["attestation_freshness_seconds"] = float(att_cfg["freshness_window_seconds"])
+    if "storage_path" in att_cfg:
+        flat["attestation_storage_path"] = att_cfg["storage_path"]
+
     return CoordinatorConfig(**flat)
 
 
@@ -87,9 +102,17 @@ def main() -> None:
     cfg = load_config(config_path)
 
     # 1. Build FlowerServer and register it globally BEFORE uvicorn starts
+    from coordinator.app.flwr_server.admission import NodeAdmissionManager
+    admission_mgr = NodeAdmissionManager(
+        enabled=cfg.attestation_enabled,
+        max_nodes_per_host=cfg.max_nodes_per_host,
+        freshness_window_seconds=cfg.attestation_freshness_seconds,
+        storage_path=cfg.attestation_storage_path,
+    )
     flower_server = FlowerServer(
         server_address=cfg.flower_server_address,
         num_rounds=cfg.flower_num_rounds,
+        admission_manager=admission_mgr,
     )
     deps.set_flower_server(flower_server)
 

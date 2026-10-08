@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ class NodeStatus(str, Enum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
+    REJECTED_SYBIL = "rejected_sybil"
 
 
 class QueryRequest(BaseModel):
@@ -58,6 +59,26 @@ class NodeInfo(BaseModel):
     u_agr: float = 1.0
     s_i: float = 0.7
     feedback_count: int = 0
+    hardware_fingerprint: Optional[str] = None
+    attestation_status: str = "verified"
+    authorized: bool = True
+
+
+class AttestationRequest(BaseModel):
+    node_id: str
+    fingerprint: str
+    timestamp: float
+    nonce: str
+    hardware_summary: Dict[str, Any] = Field(default_factory=dict)
+    signature: Optional[str] = None
+
+
+class AttestationResponse(BaseModel):
+    admitted: bool
+    lease_token: str
+    fingerprint: str
+    message: str
+    max_nodes_per_host: int = 1
 
 
 class NodeListResponse(BaseModel):

@@ -17,6 +17,8 @@ from coordinator.app.tasr.feedback import TASRFeedbackEngine
 from coordinator.app.tasr.router import TrustAwareRouter
 from shared.embeddings.local import LocalSentenceTransformerEmbeddings
 from shared.schemas.common import (
+    AttestationRequest,
+    AttestationResponse,
     HealthResponse,
     NodeInfo,
     NodeListResponse,
@@ -43,15 +45,24 @@ def query(req: QueryRequest) -> QueryResponse:
     # 1. Register newly detected nodes into TASR state
     for cid, info in flower.get_node_registry().items():
         nid = info.get("node_id", cid)
+        if not info.get("authorized", True):
+            continue
         if nid not in tasr_router.centroids:
             centroid = info.get("centroid")
             profile_centroids = info.get("profile_centroids")
             doc_embeddings = info.get("doc_embeddings")
+
+            fp = info.get("hardware_fingerprint") or flower.admission_manager.get_fingerprint_for_node(nid)
+            initial_trust_state = (
+                flower.admission_manager.get_fingerprint_trust_state(fp) if fp else None
+            )
+
             tasr_router.register_client(
                 client_id=nid,
                 centroid=centroid if centroid is not None else [0.0] * embedder.dimension,
                 doc_embeddings=doc_embeddings,
                 profile_centroids=profile_centroids,
+                initial_trust_state=initial_trust_state,
             )
 
     # 2. Compute query embedding & obtain primary and feedback node targets
@@ -126,8 +137,13 @@ def query(req: QueryRequest) -> QueryResponse:
         feedback_targets, node_doc_embeddings, f_rel, node_trust_rel
     )
 
-    # 6. Apply median-thresholded trust updates
+    # 6. Apply median-thresholded trust updates and persist by hardware fingerprint
     tasr_router.update_trust(feedback_targets, f_rel, f_cons, f_agr)
+    for nid in feedback_targets:
+        fp = flower.admission_manager.get_fingerprint_for_node(nid)
+        if fp:
+            trust_dict = tasr_router.export_trust_state(nid)
+            flower.admission_manager.save_fingerprint_trust_state(fp, trust_dict)
 
     # 7. Build telemetry payload
     current_trust_map = {
@@ -153,6 +169,31 @@ def query(req: QueryRequest) -> QueryResponse:
     )
 
 
+@router.post("/nodes/attest", response_model=AttestationResponse)
+def attest_node(req: AttestationRequest) -> AttestationResponse:
+    """Pre-flight hardware attestation handshake."""
+    flower = get_flower_server()
+    admitted, msg, lease = flower.admission_manager.attest_and_admit(req)
+    if not admitted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=msg,
+        )
+    return AttestationResponse(
+        admitted=True,
+        lease_token=lease,
+        fingerprint=req.fingerprint,
+        message=msg,
+        max_nodes_per_host=flower.admission_manager.max_nodes_per_host,
+    )
+
+
+@router.get("/attestation/summary")
+def get_attestation_summary() -> Dict[str, Any]:
+    flower = get_flower_server()
+    return flower.admission_manager.get_summary()
+
+
 @router.get("/nodes", response_model=NodeListResponse)
 def list_nodes() -> NodeListResponse:
     flower = get_flower_server()
@@ -162,7 +203,12 @@ def list_nodes() -> NodeListResponse:
     for cid, info in registry.items():
         nid = info.get("node_id", cid)
         status_str = info.get("status", "unknown")
-        node_status = NodeStatus.HEALTHY if status_str == "healthy" else NodeStatus.DEGRADED
+        if status_str == "healthy":
+            node_status = NodeStatus.HEALTHY
+        elif status_str == "rejected_sybil":
+            node_status = NodeStatus.REJECTED_SYBIL
+        else:
+            node_status = NodeStatus.DEGRADED
 
         current_trust = 1.0
         u_rel = 1.0
@@ -180,6 +226,10 @@ def list_nodes() -> NodeListResponse:
             s_i = float(state.s_i)
             feedback_count = int(state.feedback_count)
 
+        fp = info.get("hardware_fingerprint") or flower.admission_manager.get_fingerprint_for_node(nid)
+        is_auth = info.get("authorized", flower.admission_manager.is_authorized(nid))
+        att_status = "verified" if is_auth else "rejected_sybil"
+
         nodes.append(
             NodeInfo(
                 node_id=nid,
@@ -192,6 +242,9 @@ def list_nodes() -> NodeListResponse:
                 u_agr=u_agr,
                 s_i=s_i,
                 feedback_count=feedback_count,
+                hardware_fingerprint=fp,
+                attestation_status=att_status,
+                authorized=is_auth,
                 last_seen=datetime.utcnow(),
             )
         )
