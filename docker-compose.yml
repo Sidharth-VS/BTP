@@ -155,6 +155,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest  
     container_name: fedrag-node-5
     environment:
       - NODE_ID=node-5
@@ -182,6 +183,7 @@ services:
     build:
       context: .
       dockerfile: nodes/Dockerfile
+    image: fedrag-node:latest
     container_name: fedrag-node-6
     environment:
       - NODE_ID=node-6

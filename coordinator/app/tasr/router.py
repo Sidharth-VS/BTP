@@ -195,6 +195,15 @@ class TrustAwareRouter:
                 "TASR: Restored historical trust for node '%s' (u_rel=%.3f, count=%d)",
                 client_id, self.reputation[client_id], self.feedback_count[client_id]
             )
+        elif client_id in self.reputation:
+            # Re-entry without a persisted snapshot (e.g. no fingerprint anchor yet):
+            # keep the live in-memory trust rather than resetting it to defaults.
+            logger.info(
+                "TASR: Node '%s' re-registered; preserving in-memory trust (u_rel=%.3f, count=%d)",
+                client_id,
+                self.reputation[client_id],
+                self.feedback_count.get(client_id, 0),
+            )
         else:
             self.reputation[client_id] = 1.0
             self.consistency_trust[client_id] = 1.0
@@ -233,6 +242,7 @@ class TrustAwareRouter:
         doc_embeddings: Optional[Union[List[List[float]], np.ndarray]] = None,
         centroid: Optional[Union[List[float], np.ndarray]] = None,
         profile_centroids: Optional[Union[List[List[float]], np.ndarray]] = None,
+        initial_trust_state: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Alias for register_client providing multi-format parameter support."""
         if centroid is None and centroids is not None:
@@ -255,6 +265,7 @@ class TrustAwareRouter:
             centroid=c_val,
             doc_embeddings=doc_embeddings,
             profile_centroids=p_val,
+            initial_trust_state=initial_trust_state,
         )
 
     def _effective_trust(self, client_id: Any, top_k: int = 3) -> float:

@@ -177,6 +177,52 @@ def test_hardware_anchored_trust_persistence(temp_storage):
     assert router3.feedback_count["node-attacker"] == 15
 
 
+def test_reentry_preserves_in_memory_trust_without_snapshot():
+    """
+    A re-registration that cannot find a persisted snapshot must NOT wipe the
+    live in-memory trust for a node that is already known to the router.
+    """
+    router = TrustAwareRouter()
+    router.register_client(client_id="node-1", centroid=[0.1] * 384)
+    assert router.reputation["node-1"] == 1.0
+
+    # Trust degrades while the node is connected.
+    router.reputation["node-1"] = 0.37
+    router.consistency_trust["node-1"] = 0.6
+    router.agreement_trust["node-1"] = 0.44
+    router.feedback_count["node-1"] = 22
+
+    # Node exits and re-enters; no persisted snapshot is available (None).
+    router.register_client(
+        client_id="node-1",
+        centroid=[0.1] * 384,
+        initial_trust_state=None,
+    )
+
+    # The weight it left with must survive the re-registration.
+    assert router.reputation["node-1"] == 0.37
+    assert router.consistency_trust["node-1"] == 0.6
+    assert router.agreement_trust["node-1"] == 0.44
+    assert router.feedback_count["node-1"] == 22
+
+    # A genuinely new node still cold-starts at 1.0.
+    router.register_client(client_id="node-new", centroid=[0.1] * 384)
+    assert router.reputation["node-new"] == 1.0
+
+
+def test_register_node_alias_restores_trust():
+    """The register_node() alias must forward a supplied initial trust state."""
+    router = TrustAwareRouter()
+    router.register_node(
+        node_id="node-1",
+        centroid=[0.1] * 384,
+        initial_trust_state={"u_rel": 0.31, "u_cons": 0.5, "u_agr": 0.4, "feedback_count": 9},
+    )
+    assert router.reputation["node-1"] == 0.31
+    assert router.consistency_trust["node-1"] == 0.5
+    assert router.feedback_count["node-1"] == 9
+
+
 def test_coordinator_reboot_recovers_state(temp_storage):
     """Verifies that reloading NodeAdmissionManager from disk preserves state."""
     manager1 = NodeAdmissionManager(

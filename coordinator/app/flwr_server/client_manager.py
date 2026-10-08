@@ -177,6 +177,40 @@ class LoggingClientManager(SimpleClientManager):
             client.cid,
         )
 
+    def _persist_trust_state(self, node_id: str) -> None:
+        """
+        Snapshots the node's current TASR trust into the fingerprint registry so
+        that a later re-entry restores the weight it left with, rather than
+        starting from cold-start defaults.
+        """
+        admission_mgr = getattr(self.strategy, "admission_manager", None)
+        if admission_mgr is None:
+            return
+        try:
+            from coordinator.app.api.v1.endpoints import tasr_router
+        except Exception as e:
+            logger.debug("Trust persistence skipped (TASR router unavailable): %s", e)
+            return
+
+        # Only snapshot nodes the router actually tracks; otherwise we would
+        # overwrite a fingerprint's real trust with cold-start defaults.
+        if node_id not in tasr_router.centroids:
+            return
+
+        fingerprint = admission_mgr.get_fingerprint_for_node(node_id)
+        if not fingerprint:
+            return
+
+        admission_mgr.save_fingerprint_trust_state(
+            fingerprint, tasr_router.export_trust_state(node_id)
+        )
+        logger.info(
+            "💾 Persisted trust for exiting node '%s' (u_rel=%.3f, count=%d)",
+            node_id,
+            tasr_router.reputation.get(node_id, 1.0),
+            tasr_router.feedback_count.get(node_id, 0),
+        )
+
     def unregister(self, client: ClientProxy) -> None:
         cid = client.cid
         existed = cid in self.clients
@@ -187,6 +221,9 @@ class LoggingClientManager(SimpleClientManager):
             node_info = self.strategy._node_registry.pop(cid, None)
             if node_info:
                 node_id = node_info.get("node_id")
+
+        if node_id:
+            self._persist_trust_state(node_id)
 
         if self.strategy and hasattr(self.strategy, "admission_manager") and self.strategy.admission_manager:
             self.strategy.admission_manager.release_node(node_id=node_id, cid=cid)
