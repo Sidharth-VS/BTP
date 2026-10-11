@@ -43,18 +43,16 @@ try:
         # High-level Metrics Header
         healthy_count = len(df[df["status"] == "healthy"])
         avg_trust = df["trust_score"].mean() if "trust_score" in df else 1.0
-        defense_mode = tasr_summary.get("defense_mode", "rel_cons_agr")
         total_queries = tasr_summary.get("total_queries", 0)
         warmup_queries = tasr_summary.get("warmup_queries", 50)
         is_warmup = tasr_summary.get("is_warmup_active", True)
 
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Registered Nodes", len(df))
         col2.metric("Healthy Nodes", healthy_count)
         col3.metric("Avg Network Trust", f"{avg_trust:.3f}")
-        col4.metric("Defense Mode", defense_mode.upper())
         warmup_label = "WARMUP" if is_warmup else "OPERATIONAL"
-        col5.metric("Query Count", f"{total_queries} ({warmup_label})")
+        col4.metric("Query Count", f"{total_queries} ({warmup_label})")
 
         st.markdown("---")
 
@@ -73,7 +71,7 @@ try:
 
         # 2. Detailed Node Telemetry Table
         st.subheader("📋 Node Telemetry Details")
-        display_cols = ["node_id", "status", "domain", "trust_score", "u_rel", "u_cons", "u_agr", "s_i", "feedback_count"]
+        display_cols = ["node_id","trust_score", "u_rel", "u_cons", "u_agr", "s_i", "feedback_count"]
         display_cols = [c for c in display_cols if c in df.columns]
         display_df = df[display_cols].copy()
 

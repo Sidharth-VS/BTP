@@ -1,27 +1,29 @@
 defaults:
-  server_address: "coordinator:9091"
-  embedding_model_name: "all-MiniLM-L6-v2"
+  server_address: fedrag-coordinator:9091
+  embedding_model_name: all-MiniLM-L6-v2
   embedding_dimension: 384
   top_k_default: 5
-  persist_directory_prefix: "/workspace/chroma"
-  data_directory_prefix: "/workspace/data"
-  collection_name_prefix: "fedrag"
-
+  persist_directory_prefix: /workspace/chroma
+  data_directory_prefix: /workspace/data
+  collection_name_prefix: fedrag
 nodes:
-  - node_id: "node-1"
-    domain: "finance"
-
-  - node_id: "node-2"
-    domain: "medical"
-
-  - node_id: "node-3"
-    domain: "legal"
-    
-  - node_id: "node-4"
-    domain: "computer_science"
-
-  - node_id: "node-5"
-    domain: "hardware_security"
-
-  - node_id: "node-6"
-    domain: "computer_vision"
+- node_id: node-1
+  domain: general
+- node_id: node-2
+  domain: general
+- node_id: node-3
+  domain: general
+- node_id: node-4
+  domain: general
+- node_id: node-5
+  domain: general
+- node_id: node-6
+  domain: general
+- node_id: node-7
+  domain: general
+- node_id: node-8
+  domain: general
+- node_id: node-9
+  domain: general
+- node_id: node-10
+  domain: medical

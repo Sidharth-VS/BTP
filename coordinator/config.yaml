@@ -46,6 +46,6 @@ trust_db:
 # Hardware Attestation & Sybil Defense
 attestation:
   enabled: true
-  max_nodes_per_host: 6
+  max_nodes_per_host: 50
   freshness_window_seconds: 3000
   storage_path: "workspace/coordinator/attestation_registry.json"
