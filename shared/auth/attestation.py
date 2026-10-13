@@ -216,7 +216,7 @@ def generate_host_fingerprint(raw_identifiers: Optional[Dict[str, Any]] = None) 
     # Visibility into fingerprint composition — makes misconfigured identity
     # sources (e.g. containers without the machine-id mount) diagnosable.
     logger.info(
-        "Host fingerprint composition: dmi=%s machine_id=%s mac=%s cpu=%s/%s",
+        "Host fingerprint composition: dmi=%s machine_id=%s",
         (canonical_components["dmi_uuid"] or "")[:12],
         canonical_components["machine_id"][:12]
         # canonical_components["mac_address"],

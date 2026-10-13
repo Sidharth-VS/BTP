@@ -14,13 +14,6 @@ st.markdown(
     "and local LLM synthesis."
 )
 
-with st.sidebar:
-    st.header("⚙️ System Settings")
-    st.text(f"Coordinator:\n{API_URL}")
-    st.caption("Active Strategy: TASR Targeted Fanout + Ollama Synthesis")
-    st.markdown("---")
-    st.markdown("🔗 [Open TASR Admin Dashboard](./Admin_Dashboard)")
-
 query = st.text_input("Enter your query:", placeholder="e.g., What are the standard medical protocols?")
 col1, col2 = st.columns([1, 3])
 with col1:
