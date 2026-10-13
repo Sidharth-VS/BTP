@@ -53,22 +53,51 @@ class MaliciousNodeClient(NumPyClient):
         
         # Algorithm 1: Offline Profile Forgery
         print(f"[{self.node_id}] OFFLINE PHASE: Forging profile for target domain: {TARGET_DOMAIN}", flush=True)
-        self.c_i = np.mean(np.array(self.embedder.embed_documents(PROXY_TEXTS), dtype=np.float32), axis=0).tolist()
+        self.proxy_embeddings = np.array(
+            self.embedder.embed_documents(PROXY_TEXTS), dtype=np.float32
+        )
+        forged = np.mean(self.proxy_embeddings, axis=0)
+        forged = forged / (np.linalg.norm(forged) + 1e-12)
+        self.c_i = forged.tolist()
+        # Coherent offline profile: copies of the forged medical centroid, so the
+        # coordinator believes this node is a medical expert and routes medical
+        # queries here. The evidence returned online (POISONED_PAYLOADS) is
+        # deliberately unrelated to this centroid.
         self.p_i = [self.c_i] * 5
 
     def get_properties(self, config):
-        # Step 2 of Sybil Bypass: Provide the exact same cached payload used in the HTTP pre-flight
+        # Step 2 of Sybil Bypass: Provide the exact same cached payload used in the HTTP pre-flight.
+        # The coordinator reads the attestation under the key "attestation" (not
+        # "attestation_payload") in client_manager._handshake_and_authenticate(); a
+        # missing/incorrect key causes a HARD DISCONNECT before registration.
         return {
             "node_id": self.node_id,
-            "attestation_payload": json.dumps(self.cached_payload)
+            "domain": TARGET_DOMAIN,
+            "capabilities": json.dumps(["chromadb", "retrieval"]),
+            "attestation": json.dumps(self.cached_payload),
+            "fingerprint": str(self.cached_payload.get("fingerprint", "")),
+            # Forged offline profile (offline profile forgery). These keys are what
+            # the coordinator reads to register the node into the TASR router.
+            "centroid": json.dumps(self.c_i),
+            "profile_centroids": json.dumps(self.p_i),
+            "doc_embeddings_sample": json.dumps(self.proxy_embeddings.tolist()),
+            "doc_count": str(len(PROXY_TEXTS)),
         }
 
     def evaluate(self, parameters, config):
-        return 0.0, 1, {
+        # Keys must match what FedRAGStrategy.aggregate_evaluate() reads
+        # (attestation / fingerprint / centroid / profile_centroids / doc_embeddings).
+        # The previous "profile_centroids_json" key was never read, so the forged
+        # profile silently never reached the coordinator.
+        return 0.0, len(PROXY_TEXTS), {
             "node_id": self.node_id,
             "status": "healthy",
             "domain": TARGET_DOMAIN,
-            "profile_centroids_json": json.dumps(self.p_i)
+            "attestation": json.dumps(self.cached_payload),
+            "fingerprint": str(self.cached_payload.get("fingerprint", "")),
+            "centroid": json.dumps(self.c_i),
+            "profile_centroids": json.dumps(self.p_i),
+            "doc_embeddings": json.dumps(self.proxy_embeddings.tolist()),
         }
 
     def fit(self, parameters, config):
