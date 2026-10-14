@@ -1,4 +1,3 @@
-
 # Coordinator Service Configuration
 server:
   host: "0.0.0.0"
@@ -25,7 +24,10 @@ synthesis:
 tasr:
   defense_mode: "rel_cons_agr"  # "rel_cons_agr", "rel_cons", or "none"
   decay_factor: 0.9             # γ: decay when feedback < median
-  recovery_factor: 1.02         # γ_rec: recover when feedback >= median
+  recovery_factor: 1.1111       # γ_rec: recover when feedback >= median. Kept at ~1/decay
+                                # so a node that lands above the median as often as below
+                                # it neither gains nor erodes; 1.02 ratcheted every node
+                                # monotonically down to min_reputation.
   min_reputation: 0.1           # floor for trust variables
   warmup_queries: 50            # queries before trust updates kick in
   cold_start_s0: 0.7            # s_0: initial cold-start factor
@@ -33,9 +35,24 @@ tasr:
   alpha_r: 1.0                  # exponent for u_rel
   alpha_c: 1.0                  # exponent for u_cons (via g)
   alpha_a: 0.5                  # exponent for u_agr (via g)
-  delta_c: 0.3                  # δ_c: floor for g(u_cons)
-  delta_a: 0.5                  # δ_a: floor for g(u_agr)
+  delta_c: 0.0                  # δ_c: floor for g(u_cons). f_cons is the evidence-vs-declared
+                                # -centroid check that catches a node returning evidence
+                                # inconsistent with the profile it claimed. A 0.3 floor kept a
+                                # fully-inconsistent node (u_cons=0.1) at 37% weight, which was
+                                # enough for the malicious node to outrank honest peers.
+  delta_a: 0.0                  # δ_a: floor for g(u_agr)
   docs_for_feedback: 5          # top-K docs used for feedback computation
+  min_query_affinity: 0.0       # Clients whose declared-domain cosine affinity for the query
+                                # is below this are excluded from the trust update, so they are
+                                # not penalised for out-of-domain evidence. Do NOT enable on its
+                                # own: excluding clients shrinks the scored cohort toward the
+                                # attacker alone on its target domain, and the median then
+                                # compares it against itself, so it never decays. Measured with
+                                # the gate at 0.2: honest erosion stopped (u_rel 0.42 -> 0.98)
+                                # but the attacker's tau ratio rose to 0.52 and it ranked #1 on
+                                # 39/69 queries instead of 9/69. Pair it with an absolute
+                                # (threshold_mode: fixed) threshold before enabling.
+                                # 0 disables the gate.
   explore_interval: 20          # every N queries, add random extra node
   explore_extra: 1              # number of extra nodes for exploration
   fixed_threshold: null         # if set, use fixed threshold instead of median

@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional
 
+import numpy as np
+
 from fastapi import APIRouter, HTTPException, status
 
 from coordinator.app.api.deps import get_flower_server
@@ -33,6 +35,11 @@ from shared.schemas.common import (
 
 logger = logging.getLogger("coordinator.api")
 router = APIRouter()
+
+# Tolerated mean cosine between a node's claimed evidence embeddings and the
+# coordinator's recomputation from the same returned text. Below this, the node
+# sent embeddings that do not describe the evidence it returned.
+EMBEDDING_MATCH_TOLERANCE = 0.99
 
 synthesizer = OllamaSynthesizer()
 embedder = LocalSentenceTransformerEmbeddings()
@@ -68,6 +75,22 @@ def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwar
         params,
     )
     return tasr_router
+
+
+def _embedding_mismatch(claimed: Any, recomputed: Any) -> Optional[float]:
+    """Mean cosine between a node's claimed evidence embeddings and the
+    coordinator's recomputation from the same text, or None when not comparable."""
+    if not claimed or not recomputed or len(claimed) != len(recomputed):
+        return None
+    a = np.asarray(claimed, dtype=np.float64)
+    b = np.asarray(recomputed, dtype=np.float64)
+    if a.ndim != 2 or a.shape != b.shape:
+        return None
+    denom = np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1)
+    valid = denom > 1e-12
+    if not np.any(valid):
+        return None
+    return float(np.mean((a[valid] * b[valid]).sum(axis=1) / denom[valid]))
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -156,25 +179,66 @@ def query(req: QueryRequest) -> QueryResponse:
         answer = None
         logger.info("LLM synthesis skipped for query (use_llm=false)")
 
-    # 5. Compute TASR feedback signals across all feedback targets
+    # 5. Compute TASR feedback signals across all feedback targets.
+    #    The evidence is re-embedded coordinator-side from the returned chunk
+    #    text. A node's submitted `doc_embeddings` and self-reported `score` are
+    #    attacker-controlled, so trusting either lets a node inflate its own
+    #    relevance/consistency and stay at the top of the routing order.
+    verified_embeddings: Dict[str, List[List[float]]] = {}
+    for nid in feedback_targets:
+        results = (node_results.get(nid) or {}).get("results", []) or []
+        contents = [
+            str(chunk.get("content", "")).strip()
+            for chunk in results
+            if str(chunk.get("content", "")).strip()
+        ]
+        verified_embeddings[nid] = (
+            [list(map(float, vec)) for vec in embedder.embed_documents(contents)]
+            if contents
+            else []
+        )
+
+        mismatch = _embedding_mismatch(
+            node_doc_embeddings.get(nid, []), verified_embeddings[nid]
+        )
+        if mismatch is not None and mismatch < EMBEDDING_MATCH_TOLERANCE:
+            logger.warning(
+                "Node '%s' returned evidence embeddings inconsistent with its returned "
+                "text (mean cosine %.3f < %.2f) — trust scored from recomputed embeddings",
+                nid,
+                mismatch,
+                EMBEDDING_MATCH_TOLERANCE,
+            )
+
     f_rel: Dict[str, float] = {}
     f_cons: Dict[str, float] = {}
     node_trust_rel: Dict[str, float] = {}
 
     for nid in feedback_targets:
-        docs = node_doc_embeddings.get(nid, [])
-        scores = [s.score for s in all_sources if s.node_id == nid]
-        f_rel[nid] = TASRFeedbackEngine.calculate_relevance(q_emb, docs, chunk_scores=scores)
+        docs = verified_embeddings[nid]
+        f_rel[nid] = TASRFeedbackEngine.calculate_relevance(q_emb, docs)
         centroids = tasr_router.profile_centroids.get(nid)
         f_cons[nid] = TASRFeedbackEngine.calculate_consistency(q_emb, centroids, docs)
         node_trust_rel[nid] = tasr_router.reputation.get(nid, 1.0)
 
     f_agr = TASRFeedbackEngine.calculate_cross_client_agreement(
-        feedback_targets, node_doc_embeddings, f_rel, node_trust_rel
+        feedback_targets, verified_embeddings, f_rel, node_trust_rel
     )
 
-    # 6. Apply median-thresholded trust updates and persist by hardware fingerprint
-    tasr_router.update_trust(feedback_targets, f_rel, f_cons, f_agr)
+    # 6. Apply median-thresholded trust updates and persist by hardware fingerprint.
+    #    Clients whose declared domain is far from this query were dispatched only
+    #    to fill k_route slots, so they are excluded from scoring — otherwise they
+    #    are penalised for evidence they could not have had.
+    eligible_targets: Optional[set] = None
+    if tasr_router.min_query_affinity > 0:
+        affinities = tasr_router.query_affinity(q_emb)
+        eligible_targets = {
+            nid
+            for nid in feedback_targets
+            if affinities.get(nid, 0.0) >= tasr_router.min_query_affinity
+        }
+
+    tasr_router.update_trust(feedback_targets, f_rel, f_cons, f_agr, eligible=eligible_targets)
     for nid in feedback_targets:
         fp = flower.admission_manager.get_fingerprint_for_node(nid)
         if fp:
