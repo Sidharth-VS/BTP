@@ -149,8 +149,12 @@ def query(req: QueryRequest) -> QueryResponse:
     generation_sources.sort(key=lambda s: s.score, reverse=True)
     all_sources.sort(key=lambda s: s.score, reverse=True)
 
-    # Synthesize answer using the primary routed evidence
-    answer = synthesizer.synthesize(query=req.query, sources=generation_sources)
+    # Synthesize answer using the primary routed evidence (optional per request)
+    if req.use_llm:
+        answer = synthesizer.synthesize(query=req.query, sources=generation_sources)
+    else:
+        answer = None
+        logger.info("LLM synthesis skipped for query (use_llm=false)")
 
     # 5. Compute TASR feedback signals across all feedback targets
     f_rel: Dict[str, float] = {}
