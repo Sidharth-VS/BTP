@@ -133,7 +133,7 @@ def main():
     history = []
 
     for idx, q_text in enumerate(QUERIES, start=1):
-        payload = {"query": q_text, "top_k": 3}
+        payload = {"query": q_text, "top_k": 3, "use_llm": False}
         t0 = time.time()
 
         try:

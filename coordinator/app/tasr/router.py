@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 
@@ -83,6 +83,11 @@ class TrustAwareRouter:
         explore_extra: int = 1,
         defense_mode: str = "rel_cons_agr",
         k_route: int = 6,
+        # Clients whose declared-domain affinity for the query is below this are
+        # excluded from the trust update: they were dispatched only to fill
+        # k_route slots, so their evidence is not a fair competence test. 0.0
+        # disables the gate (every routed client is scored).
+        min_query_affinity: float = 0.0,
         # Alias parameters for backwards compatibility
         decay_gamma: Optional[float] = None,
         recovery_gamma: Optional[float] = None,
@@ -110,6 +115,7 @@ class TrustAwareRouter:
         self.explore_extra = explore_extra
         self.defense_mode = defense_mode
         self.k_route = k_route
+        self.min_query_affinity = min_query_affinity
 
         self.centroids: Dict[Any, np.ndarray] = {}
         self.profile_centroids: Dict[Any, np.ndarray] = {}
@@ -334,6 +340,22 @@ class TrustAwareRouter:
 
         return primary_routed, feedback_set
 
+    def query_affinity(self, query_emb: Union[np.ndarray, List[float]]) -> Dict[Any, float]:
+        """Base (trust-free) cosine affinity of each registered client for a query.
+
+        Mirrors the raw score used by route()/route_query(), so it reflects the
+        domain a client *declared*, independent of the trust it has accumulated.
+        """
+        query = self._normalize(np.asarray(query_emb, dtype=np.float64))
+        affinity: Dict[Any, float] = {}
+        for cid, centroid in self.centroids.items():
+            prof = self.profile_centroids.get(cid)
+            if prof is not None and prof.ndim == 2 and prof.shape[0] > 1:
+                affinity[cid] = float(np.max(prof @ query))
+            else:
+                affinity[cid] = float(np.dot(query, centroid))
+        return affinity
+
     def _simulate_retrieval(self, query_emb: np.ndarray, client_id: Any) -> np.ndarray:
         docs = self.doc_embeddings.get(client_id)
         if docs is None or len(docs) == 0:
@@ -388,18 +410,23 @@ class TrustAwareRouter:
         arg2: Any = None,
         arg3: Any = None,
         arg4: Any = None,
+        *,
+        eligible: Optional[Set[Any]] = None,
     ) -> None:
         """
         Flexible update_trust supporting both:
         - Base: update_trust(query_emb, selected_ids, returned_docs=None)
         - Coordinator: update_trust(feedback_nodes, f_rel, f_cons, f_agr)
+
+        ``eligible`` optionally restricts which clients are actually scored; see
+        _update_from_signals().
         """
         if isinstance(arg1, (list, tuple)) and isinstance(arg2, dict) and isinstance(arg3, dict):
             feedback_nodes = list(arg1)
             f_rel = arg2
             f_cons = arg3
             f_agr = arg4 if isinstance(arg4, dict) else {}
-            self._update_from_signals(feedback_nodes, f_rel, f_cons, f_agr)
+            self._update_from_signals(feedback_nodes, f_rel, f_cons, f_agr, eligible)
         else:
             query_emb = arg1
             selected_ids = list(arg2) if arg2 is not None else []
@@ -437,7 +464,19 @@ class TrustAwareRouter:
         rel: Dict[Any, float],
         cons: Dict[Any, float],
         agr: Dict[Any, float],
+        eligible: Optional[Set[Any]] = None,
     ) -> None:
+        """Apply decay/recovery to the clients that were fairly tested.
+
+        ``eligible`` restricts scoring to clients whose declared domain actually
+        covers the query; the rest were routed as k_route filler and must not be
+        penalised for evidence they could not have had. Feedback histories and
+        counts are recorded for every selected client either way. Thresholds are
+        computed over the scored cohort only, since clients excluded from scoring
+        are not a valid comparison baseline.
+        """
+        scored_ids = [cid for cid in selected_ids if eligible is None or cid in eligible]
+
         for cid in selected_ids:
             rel_val = rel.get(cid, 0.0)
             cons_val = cons.get(cid, 1.0) if cons else 1.0
@@ -456,23 +495,23 @@ class TrustAwareRouter:
             self._record_histories()
             return
 
-        if self.defense_mode != "none":
-            threshold = self._threshold(list(rel.values()))
-            for cid in selected_ids:
+        if self.defense_mode != "none" and scored_ids:
+            threshold = self._threshold([rel.get(cid, 0.0) for cid in scored_ids])
+            for cid in scored_ids:
                 if cid in self.reputation:
                     self.reputation[cid] = self._update_one_score(self.reputation[cid], rel.get(cid, 0.0), threshold)
 
-        if self.defense_mode in ("rel_cons", "rel_cons_agr") and cons:
-            threshold = self._threshold(list(cons.values()))
-            for cid in selected_ids:
+        if self.defense_mode in ("rel_cons", "rel_cons_agr") and cons and scored_ids:
+            threshold = self._threshold([cons.get(cid, 1.0) for cid in scored_ids])
+            for cid in scored_ids:
                 if cid in self.consistency_trust:
                     self.consistency_trust[cid] = self._update_one_score(
                         self.consistency_trust[cid], cons.get(cid, 1.0), threshold
                     )
 
-        if self.defense_mode == "rel_cons_agr" and agr:
-            threshold = self._threshold([agr.get(cid, 1.0) for cid in selected_ids])
-            for cid in selected_ids:
+        if self.defense_mode == "rel_cons_agr" and agr and scored_ids:
+            threshold = self._threshold([agr.get(cid, 1.0) for cid in scored_ids])
+            for cid in scored_ids:
                 if cid in self.agreement_trust:
                     self.agreement_trust[cid] = self._update_one_score(
                         self.agreement_trust[cid], agr.get(cid, 1.0), threshold

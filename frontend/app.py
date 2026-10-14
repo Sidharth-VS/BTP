@@ -18,14 +18,25 @@ query = st.text_input("Enter your query:", placeholder="e.g., What are the stand
 col1, col2 = st.columns([1, 3])
 with col1:
     top_k = st.slider("Top-K per node", min_value=1, max_value=10, value=3)
+with col2:
+    use_llm = st.toggle(
+        "Enable LLM synthesis",
+        value=True,
+        help="Turn off to return retrieved federated evidence without generating an answer.",
+    )
 
 if st.button("🔍 Search & Generate", type="primary"):
     if not query.strip():
         st.warning("Please enter a query.")
     else:
-        with st.spinner("Routing via TASR, querying nodes, and synthesizing answer..."):
+        spinner_msg = (
+            "Routing via TASR, querying nodes, and synthesizing answer..."
+            if use_llm
+            else "Routing via TASR and querying nodes (LLM synthesis disabled)..."
+        )
+        with st.spinner(spinner_msg):
             headers = {"X-API-Key": API_KEY}
-            payload = {"query": query, "top_k": top_k}
+            payload = {"query": query, "top_k": top_k, "use_llm": use_llm}
 
             try:
                 response = requests.post(API_URL, json=payload, headers=headers, timeout=120)
@@ -35,7 +46,9 @@ if st.button("🔍 Search & Generate", type="primary"):
                 # 1. Prominently display synthesized answer
                 st.subheader("🤖 Synthesized Answer")
                 answer = data.get("answer")
-                if answer:
+                if not use_llm:
+                    st.info("LLM synthesis is off — showing retrieved federated evidence only.")
+                elif answer:
                     st.success(answer)
                 else:
                     st.info("No answer was generated.")

@@ -25,6 +25,9 @@ class QueryRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=100)
     routing_strategy: RoutingStrategy = RoutingStrategy.BROADCAST
     filters: Dict[str, Any] = Field(default_factory=dict)
+    # When False, retrieval still runs but LLM synthesis is skipped and
+    # `QueryResponse.answer` is returned as None.
+    use_llm: bool = True
 
 
 class SourceResult(SearchResult):
@@ -41,7 +44,7 @@ class RoutingInfo(BaseModel):
 
 
 class QueryResponse(BaseModel):
-    answer: str
+    answer: Optional[str] = None
     sources: List[SourceResult] = Field(default_factory=list)
     routing_info: RoutingInfo
 
