@@ -1,0 +1,5 @@
+services:
+  node-2:
+    environment:
+      PROXY_PROFILE_ENABLED: "true"
+      PROXY_PROFILE_TEXT: "Medical healthcare clinical diagnosis symptoms treatment patient medicine clinical research"
