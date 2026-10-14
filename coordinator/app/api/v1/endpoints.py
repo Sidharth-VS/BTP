@@ -5,9 +5,10 @@ POST /api/v1/query  — Route query via TASR, synthesize answer, and update trus
 GET  /api/v1/nodes  — List connected nodes with dynamic TASR trust weights
 GET  /api/v1/health — Coordinator health status
 """
+import inspect
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping, Optional
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -34,8 +35,39 @@ logger = logging.getLogger("coordinator.api")
 router = APIRouter()
 
 synthesizer = OllamaSynthesizer()
-tasr_router = TrustAwareRouter(k_route = 6)
 embedder = LocalSentenceTransformerEmbeddings()
+
+# Default router. The coordinator entry point rebuilds this from the `tasr:`
+# block in config.yaml via configure_tasr() before the API starts serving.
+tasr_router = TrustAwareRouter(k_route=6)
+
+
+def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwareRouter:
+    """Build the TASR router from the coordinator's ``tasr:`` config block.
+
+    Called by the coordinator entry point before the API starts serving, so the
+    hyperparameters in ``coordinator/config.yaml`` actually take effect instead
+    of silently falling back to the class defaults. Keys that are absent,
+    ``None``, or not accepted by ``TrustAwareRouter`` are ignored so the
+    router's own defaults apply.
+    """
+    global tasr_router
+
+    accepted = set(inspect.signature(TrustAwareRouter.__init__).parameters) - {"self"}
+    params: Dict[str, Any] = {
+        key: value
+        for key, value in (tasr_config or {}).items()
+        if key in accepted and value is not None
+    }
+    params.setdefault("k_route", 6)
+
+    tasr_router = TrustAwareRouter(**params)
+    logger.info(
+        "TASR router configured from coordinator config (%d param(s) applied): %s",
+        len(params),
+        params,
+    )
+    return tasr_router
 
 
 @router.post("/query", response_model=QueryResponse)
