@@ -80,11 +80,6 @@ if st.button("🔍 Search & Generate", type="primary"):
                             st.write(src.get("content"))
                             st.caption(f"Metadata: {src.get('metadata')}")
 
-                    st.caption(
-                        "Rank Score = similarity × TASR trust (τ_i). Ordering here is the "
-                        "same order the LLM sees, so a high-similarity chunk from a "
-                        "decayed node is demoted."
-                    )
 
                 with tab2:
                     r_info = data.get("routing_info", {})
