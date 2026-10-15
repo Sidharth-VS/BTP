@@ -5,9 +5,12 @@ POST /api/v1/query  — Route query via TASR, synthesize answer, and update trus
 GET  /api/v1/nodes  — List connected nodes with dynamic TASR trust weights
 GET  /api/v1/health — Coordinator health status
 """
+import inspect
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping, Optional
+
+import numpy as np
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -33,9 +36,61 @@ from shared.schemas.common import (
 logger = logging.getLogger("coordinator.api")
 router = APIRouter()
 
+# Tolerated mean cosine between a node's claimed evidence embeddings and the
+# coordinator's recomputation from the same returned text. Below this, the node
+# sent embeddings that do not describe the evidence it returned.
+EMBEDDING_MATCH_TOLERANCE = 0.99
+
 synthesizer = OllamaSynthesizer()
-tasr_router = TrustAwareRouter(k_route = 6)
 embedder = LocalSentenceTransformerEmbeddings()
+
+# Default router. The coordinator entry point rebuilds this from the `tasr:`
+# block in config.yaml via configure_tasr() before the API starts serving.
+tasr_router = TrustAwareRouter(k_route=3)
+
+
+def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwareRouter:
+    """Build the TASR router from the coordinator's ``tasr:`` config block.
+
+    Called by the coordinator entry point before the API starts serving, so the
+    hyperparameters in ``coordinator/config.yaml`` actually take effect instead
+    of silently falling back to the class defaults. Keys that are absent,
+    ``None``, or not accepted by ``TrustAwareRouter`` are ignored so the
+    router's own defaults apply.
+    """
+    global tasr_router
+
+    accepted = set(inspect.signature(TrustAwareRouter.__init__).parameters) - {"self"}
+    params: Dict[str, Any] = {
+        key: value
+        for key, value in (tasr_config or {}).items()
+        if key in accepted and value is not None
+    }
+    params.setdefault("k_route", 3)
+
+    tasr_router = TrustAwareRouter(**params)
+    logger.info(
+        "TASR router configured from coordinator config (%d param(s) applied): %s",
+        len(params),
+        params,
+    )
+    return tasr_router
+
+
+def _embedding_mismatch(claimed: Any, recomputed: Any) -> Optional[float]:
+    """Mean cosine between a node's claimed evidence embeddings and the
+    coordinator's recomputation from the same text, or None when not comparable."""
+    if not claimed or not recomputed or len(claimed) != len(recomputed):
+        return None
+    a = np.asarray(claimed, dtype=np.float64)
+    b = np.asarray(recomputed, dtype=np.float64)
+    if a.ndim != 2 or a.shape != b.shape:
+        return None
+    denom = np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1)
+    valid = denom > 1e-12
+    if not np.any(valid):
+        return None
+    return float(np.mean((a[valid] * b[valid]).sum(axis=1) / denom[valid]))
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -51,6 +106,17 @@ def query(req: QueryRequest) -> QueryResponse:
             centroid = info.get("centroid")
             profile_centroids = info.get("profile_centroids")
             doc_embeddings = info.get("doc_embeddings")
+
+            # A node that never reported a centroid registers at the origin: it then
+            # scores 0 against every query and, if it is ever dispatched, drags the
+            # feedback cohort. Surface it instead of silently routing a zero vector.
+            if centroid is None:
+                logger.warning(
+                    "Node '%s' registered without a centroid (profile_error=%s) — "
+                    "it cannot be ranked by similarity until it reports one",
+                    nid,
+                    info.get("profile_error"),
+                )
 
             fp = info.get("hardware_fingerprint") or flower.admission_manager.get_fingerprint_for_node(nid)
             initial_trust_state = (
@@ -103,42 +169,96 @@ def query(req: QueryRequest) -> QueryResponse:
         current_trust = float(tasr_router.compute_trust_weight(node_id))
 
         for chunk in node_data.get("results", []):
+            similarity = float(chunk.get("score") or 0.0)
             src = SourceResult(
                 content=str(chunk.get("content", "")),
-                score=float(chunk.get("score") or 0.0),
+                score=similarity,
                 metadata=dict(chunk.get("metadata") or {}),
                 node_id=str(node_id),
                 trust_score=current_trust,
+                # TASR ranking key: an equally similar chunk from a low-trust node
+                # must not outrank one from a trusted node. Clamped at 0 because
+                # `score` is node-reported and a negative value would otherwise fail
+                # response validation.
+                rank_score=max(similarity * current_trust, 0.0),
             )
             all_sources.append(src)
             if node_id in primary_routed:
                 generation_sources.append(src)
 
-    generation_sources.sort(key=lambda s: s.score, reverse=True)
-    all_sources.sort(key=lambda s: s.score, reverse=True)
+    # Order by similarity × trust (τ_i), not similarity alone. The LLM context is
+    # built from the head of generation_sources, so this is what decides which
+    # chunks the answer is grounded in.
+    generation_sources.sort(key=lambda s: s.rank_score, reverse=True)
+    all_sources.sort(key=lambda s: s.rank_score, reverse=True)
 
-    # Synthesize answer using the primary routed evidence
-    answer = synthesizer.synthesize(query=req.query, sources=generation_sources)
+    # Synthesize answer using the primary routed evidence (optional per request)
+    if req.use_llm:
+        answer = synthesizer.synthesize(query=req.query, sources=generation_sources)
+    else:
+        answer = None
+        logger.info("LLM synthesis skipped for query (use_llm=false)")
 
-    # 5. Compute TASR feedback signals across all feedback targets
+    # 5. Compute TASR feedback signals across all feedback targets.
+    #    The evidence is re-embedded coordinator-side from the returned chunk
+    #    text. A node's submitted `doc_embeddings` and self-reported `score` are
+    #    attacker-controlled, so trusting either lets a node inflate its own
+    #    relevance/consistency and stay at the top of the routing order.
+    verified_embeddings: Dict[str, List[List[float]]] = {}
+    for nid in feedback_targets:
+        results = (node_results.get(nid) or {}).get("results", []) or []
+        contents = [
+            str(chunk.get("content", "")).strip()
+            for chunk in results
+            if str(chunk.get("content", "")).strip()
+        ]
+        verified_embeddings[nid] = (
+            [list(map(float, vec)) for vec in embedder.embed_documents(contents)]
+            if contents
+            else []
+        )
+
+        mismatch = _embedding_mismatch(
+            node_doc_embeddings.get(nid, []), verified_embeddings[nid]
+        )
+        if mismatch is not None and mismatch < EMBEDDING_MATCH_TOLERANCE:
+            logger.warning(
+                "Node '%s' returned evidence embeddings inconsistent with its returned "
+                "text (mean cosine %.3f < %.2f) — trust scored from recomputed embeddings",
+                nid,
+                mismatch,
+                EMBEDDING_MATCH_TOLERANCE,
+            )
+
     f_rel: Dict[str, float] = {}
     f_cons: Dict[str, float] = {}
     node_trust_rel: Dict[str, float] = {}
 
     for nid in feedback_targets:
-        docs = node_doc_embeddings.get(nid, [])
-        scores = [s.score for s in all_sources if s.node_id == nid]
-        f_rel[nid] = TASRFeedbackEngine.calculate_relevance(q_emb, docs, chunk_scores=scores)
+        docs = verified_embeddings[nid]
+        f_rel[nid] = TASRFeedbackEngine.calculate_relevance(q_emb, docs)
         centroids = tasr_router.profile_centroids.get(nid)
         f_cons[nid] = TASRFeedbackEngine.calculate_consistency(q_emb, centroids, docs)
         node_trust_rel[nid] = tasr_router.reputation.get(nid, 1.0)
 
     f_agr = TASRFeedbackEngine.calculate_cross_client_agreement(
-        feedback_targets, node_doc_embeddings, f_rel, node_trust_rel
+        feedback_targets, verified_embeddings, f_rel, node_trust_rel
     )
 
-    # 6. Apply median-thresholded trust updates and persist by hardware fingerprint
-    tasr_router.update_trust(feedback_targets, f_rel, f_cons, f_agr)
+    # 6. Apply median-thresholded trust updates and persist by hardware fingerprint.
+    #    Clients whose declared domain is far from this query were dispatched only
+    #    to fill k_route slots, so they are excluded from scoring — otherwise they
+    #    are penalised for evidence they could not have had.
+    eligible_targets: Optional[set] = None
+    if tasr_router.min_query_affinity > 0:
+        affinities = tasr_router.query_affinity(q_emb)
+        eligible_targets = {
+            nid
+            for nid in feedback_targets
+            if affinities.get(nid, 0.0) >= tasr_router.min_query_affinity
+        }
+
+    tasr_router.update_trust(feedback_targets, f_rel, f_cons, f_agr, eligible=eligible_targets)
     for nid in feedback_targets:
         fp = flower.admission_manager.get_fingerprint_for_node(nid)
         if fp:

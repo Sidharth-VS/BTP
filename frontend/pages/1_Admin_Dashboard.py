@@ -10,7 +10,7 @@ API_URL_NODES = f"{BASE_API_URL}/nodes"
 API_URL_TASR_SUMMARY = f"{BASE_API_URL}/tasr/summary"
 API_KEY = os.getenv("API_KEY", "fedrag-dev-key")
 
-st.title("🛡️ TASR Network Analytics & Security Dashboard")
+st.title("TASR Network Analytics & Security Dashboard")
 st.markdown(
     "Monitor real-time **Trust-Aware Secure Routing (TASR)** evidence feedback signals, "
     "reputation trajectories, cold-start schedule, and node isolation states."
@@ -56,22 +56,22 @@ try:
 
         st.markdown("---")
 
-        # 1. Effective Trust Weight vs Component Scores Chart
-        st.subheader("📊 Node Trust Score & Component Breakdown")
-        st.caption(
-            "Effective Weight τ_i = s_i · (u_rel)^α_r · g_c(u_cons) · g_a(u_agr). "
-            "Nodes below the threshold are deprioritized or isolated."
-        )
+        # # 1. Effective Trust Weight vs Component Scores Chart
+        # st.subheader("Node Trust Score & Component Breakdown")
+        # st.caption(
+        #     "Effective Weight τ_i = s_i · (u_rel)^α_r · g_c(u_cons) · g_a(u_agr). "
+        #     "Nodes below the threshold are deprioritized or isolated."
+        # )
 
-        cols_needed = ["node_id", "trust_score", "u_rel", "u_cons", "u_agr", "s_i"]
-        avail_cols = [c for c in cols_needed if c in df.columns]
-        chart_df = df[avail_cols].copy().set_index("node_id")
+        # cols_needed = ["node_id", "trust_score", "u_rel", "u_cons", "s_i"]
+        # avail_cols = [c for c in cols_needed if c in df.columns]
+        # chart_df = df[avail_cols].copy().set_index("node_id")
 
-        st.bar_chart(chart_df, height=380)
+        # st.bar_chart(chart_df, height=380)
 
         # 2. Detailed Node Telemetry Table
-        st.subheader("📋 Node Telemetry Details")
-        display_cols = ["node_id","trust_score", "u_rel", "u_cons", "u_agr", "s_i", "feedback_count"]
+        st.subheader("Node Telemetry Details")
+        display_cols = ["node_id","trust_score", "u_rel", "u_cons", "s_i", "feedback_count"]
         display_cols = [c for c in display_cols if c in df.columns]
         display_df = df[display_cols].copy()
 

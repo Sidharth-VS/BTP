@@ -18,6 +18,7 @@ from typing import Any, Dict
 import uvicorn
 import yaml
 from fastapi import FastAPI
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from coordinator.app.api import deps
@@ -47,6 +48,8 @@ class CoordinatorConfig(BaseSettings):
     max_nodes_per_host: int = 1
     attestation_freshness_seconds: float = 300.0
     attestation_storage_path: str = "workspace/coordinator/attestation_registry.json"
+    # Raw `tasr:` block from config.yaml, applied to the router by configure_tasr().
+    tasr: Dict[str, Any] = Field(default_factory=dict)
 
 
 def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig:
@@ -70,6 +73,8 @@ def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig
         flat["attestation_freshness_seconds"] = float(att_cfg["freshness_window_seconds"])
     if "storage_path" in att_cfg:
         flat["attestation_storage_path"] = att_cfg["storage_path"]
+
+    flat["tasr"] = raw.get("tasr", {}) or {}
 
     return CoordinatorConfig(**flat)
 
@@ -100,6 +105,10 @@ def root():
 def main() -> None:
     config_path = os.environ.get("COORDINATOR_CONFIG", "coordinator/config.yaml")
     cfg = load_config(config_path)
+
+    # 0. Apply TASR hyperparameters from config.yaml before any node connects or
+    #    request is served, so the values are not silently ignored.
+    v1_endpoints.configure_tasr(cfg.tasr)
 
     # 1. Build FlowerServer and register it globally BEFORE uvicorn starts
     from coordinator.app.flwr_server.admission import NodeAdmissionManager

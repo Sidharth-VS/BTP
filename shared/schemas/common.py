@@ -25,11 +25,18 @@ class QueryRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=100)
     routing_strategy: RoutingStrategy = RoutingStrategy.BROADCAST
     filters: Dict[str, Any] = Field(default_factory=dict)
+    # When False, retrieval still runs but LLM synthesis is skipped and
+    # `QueryResponse.answer` is returned as None.
+    use_llm: bool = True
 
 
 class SourceResult(SearchResult):
     node_id: str
     trust_score: float = Field(0.0, ge=0.0, le=1.0)
+    # The TASR ranking key the coordinator orders evidence by: retrieval similarity
+    # multiplied by the serving node's effective trust. `sources` is returned in
+    # descending rank_score order, and the same order is used for LLM context.
+    rank_score: float = Field(0.0, ge=0.0)
 
 
 class RoutingInfo(BaseModel):
@@ -41,7 +48,7 @@ class RoutingInfo(BaseModel):
 
 
 class QueryResponse(BaseModel):
-    answer: str
+    answer: Optional[str] = None
     sources: List[SourceResult] = Field(default_factory=list)
     routing_info: RoutingInfo
 
