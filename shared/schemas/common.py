@@ -33,6 +33,10 @@ class QueryRequest(BaseModel):
 class SourceResult(SearchResult):
     node_id: str
     trust_score: float = Field(0.0, ge=0.0, le=1.0)
+    # The TASR ranking key the coordinator orders evidence by: retrieval similarity
+    # multiplied by the serving node's effective trust. `sources` is returned in
+    # descending rank_score order, and the same order is used for LLM context.
+    rank_score: float = Field(0.0, ge=0.0)
 
 
 class RoutingInfo(BaseModel):

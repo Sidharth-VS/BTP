@@ -84,9 +84,15 @@ class ChromaStore:
     def get_all_embeddings(self) -> List[List[float]]:
         """Fetches all indexed vector embeddings to calculate registration centroids."""
         data = self.collection.get(include=["embeddings"])
-        embeddings = data.get("embeddings") or []
-        # chromadb >= 1.x returns numpy arrays; flatten to plain lists so the
-        # values are JSON-serializable (json.dumps fails on ndarray).
+        # chromadb >= 1.x returns a numpy array here, so it must not be tested for
+        # truthiness: `data.get("embeddings") or []` raises "The truth value of an
+        # array with more than one element is ambiguous" and silently costs the
+        # node its centroid, profile and doc embeddings.
+        embeddings = data.get("embeddings")
+        if embeddings is None:
+            return []
+        # flatten to plain lists so the values are JSON-serializable
+        # (json.dumps fails on ndarray).
         return [
             e.tolist() if hasattr(e, "tolist") else list(e) for e in embeddings
         ]

@@ -329,6 +329,16 @@ class FedRAGStrategy(Strategy):
             profile_centroids = json.loads(profile_str) if profile_str else None
             doc_embeddings = json.loads(doc_emb_str) if doc_emb_str else None
 
+            if centroid is None:
+                logger.warning(
+                    "Node '%s' (CID: %s) health check carried no centroid "
+                    "(profile_error=%s) — it will score 0 in similarity routing "
+                    "until it reports one",
+                    node_id,
+                    client_proxy.cid,
+                    metrics.get("profile_error"),
+                )
+
             self._node_registry[client_proxy.cid] = {
                 "node_id": node_id,
                 "status": status,
@@ -338,6 +348,7 @@ class FedRAGStrategy(Strategy):
                 "profile_centroids": profile_centroids,
                 "doc_embeddings": doc_embeddings,
                 "hardware_fingerprint": fingerprint,
+                "profile_error": metrics.get("profile_error"),
                 "authorized": authorized,
             }
             if is_new:

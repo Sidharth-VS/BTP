@@ -82,7 +82,7 @@ class TrustAwareRouter:
         explore_interval: int = 20,
         explore_extra: int = 1,
         defense_mode: str = "rel_cons_agr",
-        k_route: int = 6,
+        k_route: int = 3,
         # Clients whose declared-domain affinity for the query is below this are
         # excluded from the trust update: they were dispatched only to fill
         # k_route slots, so their evidence is not a fair competence test. 0.0
@@ -332,8 +332,11 @@ class TrustAwareRouter:
         primary_routed = sorted_clients[:k]
         feedback_set = list(primary_routed)
 
-        self.query_count += 1
-        if self.explore_interval > 0 and self.query_count % self.explore_interval == 0:
+        # query_count is advanced by update_trust(), matching the base router:
+        # routing alone does not consume a query, and a query that never produces
+        # scored feedback must not consume a warmup slot. The > 0 guard mirrors
+        # base route(): exploration must not fire before any update has landed.
+        if self.explore_interval > 0 and self.query_count > 0 and self.query_count % self.explore_interval == 0:
             remaining = [cid for cid in sorted_clients[k:] if cid not in primary_routed]
             if remaining:
                 feedback_set.extend(remaining[: self.explore_extra])
@@ -420,7 +423,14 @@ class TrustAwareRouter:
 
         ``eligible`` optionally restricts which clients are actually scored; see
         _update_from_signals().
+
+        Advancing ``query_count`` here (rather than in route_query) matches the
+        base trust_defense.update_trust(). The warmup gate below counts scored
+        updates, so a routed query that yields no feedback no longer burns a
+        warmup slot.
         """
+        self.query_count += 1
+
         if isinstance(arg1, (list, tuple)) and isinstance(arg2, dict) and isinstance(arg3, dict):
             feedback_nodes = list(arg1)
             f_rel = arg2

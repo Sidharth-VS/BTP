@@ -108,6 +108,18 @@ class LoggingClientManager(SimpleClientManager):
         doc_embeddings = json.loads(doc_emb_str) if doc_emb_str else None
         doc_count = int(props.get("doc_count", 0))
 
+        # A node that could not build its profile still authenticates (attestation is
+        # deliberately independent of ChromaDB), but it must not be silently routed as
+        # a zero vector — say so at admission time.
+        if centroid is None:
+            logger.warning(
+                "Node '%s' (CID: %s) reported no centroid (profile_error=%s) — "
+                "it will score 0 in similarity routing until it reports one",
+                node_id,
+                client.cid,
+                props.get("profile_error"),
+            )
+
         # Admission & Attestation Check
         admission_mgr = getattr(self.strategy, "admission_manager", None)
         if admission_mgr and admission_mgr.enabled:
@@ -146,6 +158,7 @@ class LoggingClientManager(SimpleClientManager):
                 "profile_centroids": profile_centroids,
                 "doc_embeddings": doc_embeddings,
                 "hardware_fingerprint": fingerprint,
+                "profile_error": props.get("profile_error"),
                 "authorized": True,
             }
 
