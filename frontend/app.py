@@ -50,6 +50,11 @@ if st.button("🔍 Search & Generate", type="primary"):
                     st.info("LLM synthesis is off — showing retrieved federated evidence only.")
                 elif answer:
                     st.success(answer)
+                    st.caption(
+                        "Grounding context was ranked by **similarity × TASR trust (τ_i)**, "
+                        "not similarity alone — so a near-identical chunk from a low-trust "
+                        "node cannot outrank one from a trusted node."
+                    )
                 else:
                     st.info("No answer was generated.")
 
@@ -60,14 +65,21 @@ if st.button("🔍 Search & Generate", type="primary"):
                     sources = data.get("sources", [])
                     if not sources:
                         st.info("No documents retrieved.")
+                    # The API returns these already ordered by similarity × trust.
                     for i, src in enumerate(sources):
                         node_id = src.get("node_id", "Unknown")
                         score = src.get("score", 0.0)
                         trust = src.get("trust_score", 1.0)
+                        rank = src.get("rank_score", score * trust)
 
-                        with st.expander(f"Source {i+1} | Node: `{node_id}` | Similarity Score: {score:.4f} | TASR Trust: {trust:.4f}"):
+                        with st.expander(
+                            f"Rank {i+1} | Node: `{node_id}` | "
+                            f"Rank Score (sim×τ): {rank:.4f} | "
+                            f"Similarity: {score:.4f} | TASR Trust (τ): {trust:.4f}"
+                        ):
                             st.write(src.get("content"))
                             st.caption(f"Metadata: {src.get('metadata')}")
+
 
                 with tab2:
                     r_info = data.get("routing_info", {})

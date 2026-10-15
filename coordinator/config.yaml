@@ -29,7 +29,7 @@ tasr:
                                 # it neither gains nor erodes; 1.02 ratcheted every node
                                 # monotonically down to min_reputation.
   min_reputation: 0.1           # floor for trust variables
-  warmup_queries: 50            # queries before trust updates kick in
+  warmup_queries: 5            # queries before trust updates kick in
   cold_start_s0: 0.7            # s_0: initial cold-start factor
   cold_start_tau: 30.0          # τ_s: warmup queries for cold-start ramp
   alpha_r: 1.0                  # exponent for u_rel

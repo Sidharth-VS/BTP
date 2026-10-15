@@ -46,7 +46,7 @@ embedder = LocalSentenceTransformerEmbeddings()
 
 # Default router. The coordinator entry point rebuilds this from the `tasr:`
 # block in config.yaml via configure_tasr() before the API starts serving.
-tasr_router = TrustAwareRouter(k_route=6)
+tasr_router = TrustAwareRouter(k_route=3)
 
 
 def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwareRouter:
@@ -66,7 +66,7 @@ def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwar
         for key, value in (tasr_config or {}).items()
         if key in accepted and value is not None
     }
-    params.setdefault("k_route", 6)
+    params.setdefault("k_route", 3)
 
     tasr_router = TrustAwareRouter(**params)
     logger.info(
@@ -106,6 +106,17 @@ def query(req: QueryRequest) -> QueryResponse:
             centroid = info.get("centroid")
             profile_centroids = info.get("profile_centroids")
             doc_embeddings = info.get("doc_embeddings")
+
+            # A node that never reported a centroid registers at the origin: it then
+            # scores 0 against every query and, if it is ever dispatched, drags the
+            # feedback cohort. Surface it instead of silently routing a zero vector.
+            if centroid is None:
+                logger.warning(
+                    "Node '%s' registered without a centroid (profile_error=%s) — "
+                    "it cannot be ranked by similarity until it reports one",
+                    nid,
+                    info.get("profile_error"),
+                )
 
             fp = info.get("hardware_fingerprint") or flower.admission_manager.get_fingerprint_for_node(nid)
             initial_trust_state = (
@@ -158,19 +169,28 @@ def query(req: QueryRequest) -> QueryResponse:
         current_trust = float(tasr_router.compute_trust_weight(node_id))
 
         for chunk in node_data.get("results", []):
+            similarity = float(chunk.get("score") or 0.0)
             src = SourceResult(
                 content=str(chunk.get("content", "")),
-                score=float(chunk.get("score") or 0.0),
+                score=similarity,
                 metadata=dict(chunk.get("metadata") or {}),
                 node_id=str(node_id),
                 trust_score=current_trust,
+                # TASR ranking key: an equally similar chunk from a low-trust node
+                # must not outrank one from a trusted node. Clamped at 0 because
+                # `score` is node-reported and a negative value would otherwise fail
+                # response validation.
+                rank_score=max(similarity * current_trust, 0.0),
             )
             all_sources.append(src)
             if node_id in primary_routed:
                 generation_sources.append(src)
 
-    generation_sources.sort(key=lambda s: s.score, reverse=True)
-    all_sources.sort(key=lambda s: s.score, reverse=True)
+    # Order by similarity × trust (τ_i), not similarity alone. The LLM context is
+    # built from the head of generation_sources, so this is what decides which
+    # chunks the answer is grounded in.
+    generation_sources.sort(key=lambda s: s.rank_score, reverse=True)
+    all_sources.sort(key=lambda s: s.rank_score, reverse=True)
 
     # Synthesize answer using the primary routed evidence (optional per request)
     if req.use_llm:
