@@ -57,8 +57,7 @@ def main():
 
     total_cpus, coord_cpus, front_cpus, cpu_per_node, threads_per_node = calculate_resources(num_workers)
 
-    print("\n" + "-" * 65)
-    print(" 📊 Cluster Topology & Resource Allocation Summary")
+    print("Cluster Topology & Resource Allocation Summary")
     print("-" * 65)
     print(f"  • Host CPU Cores Detected : {total_cpus} cores")
     print(f"  • Total Containers        : {total_containers}")
@@ -67,7 +66,6 @@ def main():
     print(f"    ├── Honest Client Nodes : {num_honest} (node-1 to node-{num_honest})" if num_honest > 0 else "    ├── Honest Client Nodes : 0")
     print(f"    └── Malicious Nodes     : {num_malicious} (node-{num_honest + 1} to node-{num_workers})" if num_malicious > 0 else "    └── Malicious Nodes     : 0")
     print(f"  • Per-Worker Allocation   : {cpu_per_node} CPUs | OMP_NUM_THREADS={threads_per_node}")
-    print("-" * 65)
 
     # 1. Generate nodes/nodes.yaml
     honest_nodes = [{"node_id": f"node-{i}", "domain": "general"} for i in range(1, num_honest + 1)]
