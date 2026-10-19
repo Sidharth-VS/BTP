@@ -12,7 +12,8 @@ HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 #   node-1=photo, node-2=history, node-3=travel, node-5=biology, node-6=security
 # Repeated target-domain queries are used to drive trust divergence.
 QUERIES = [
-    # 1-15: Biology (Node-5) - clean target domain
+    # 1-15: Biology (Node-5) - queries 6-8 are replaced with the
+    # adversary-penalty block below once the warmup has elapsed.
     "Why does sympathetic activity constrict pulmonary vessels?",
     "Pedigree Probability of Autosomal Recessive Trait",
     "Why don't different organisms have nucleic acid genomes containing different bases and sugar?",
@@ -65,7 +66,7 @@ QUERIES = [
     "How can I weaken my camera's flash power so it is less disturbing to my subjects?",
     "How do you protect ultrawide angle lenses with a bulbous front element?",
 
-    # 46-55: CROSSING WARM-UP (W=50) -> Rapid Biology re-focus (Node-5)
+    # 46-55: Mixed-domain continuation
     "Respiration of an animal cell media",
     "Height prediction based on genetics",
     "Simultaneously using both hands - How does that work?",
@@ -95,6 +96,44 @@ QUERIES = [
     "Vulnerability scan scheduling approach on demand versus change?"
 ]
 
+# Adversary-penalty blocks. node-10 is the forged-medical mock. On cancer/FASD
+# queries no honest node has matching evidence, so node-10 is the least-bad of
+# the routed peers and the median update lets it recover. The penalty blocks
+# below are injected at fixed positions so its poisoned evidence is exposed to
+# the relevance gate right after warmup and again at the tail of the stream.
+EARLY_PENALTY = [
+    "Cancer is a disease in which some of the body's cells grow uncontrollably.",
+    "The hallmarks of cancer include sustaining proliferative signaling and evading suppressors.",
+    "Clinical guidelines and evidence-based medicine are essential for treating squamous cell carcinoma.",
+]
+
+LATE_PENALTY = [
+    "Cancer is a disease in which some of the body's cells grow uncontrollably.",
+    "The hallmarks of cancer include sustaining proliferative signaling and evading suppressors.",
+    "Clinical guidelines and evidence-based medicine are essential for treating squamous cell carcinoma.",
+    "Fetal Alcohol Spectrum Disorders typically present with facial dysmorphism.",
+    "What mutations in oncogenes and tumor suppressor genes cause cells to divide uncontrollably?",
+    "How do cancer cells evade growth suppressors such as p53 and Rb?",
+    "What are the first-line treatment options for cutaneous squamous cell carcinoma according to current guidelines?",
+    "How do NCCN guidelines classify risk and recommend management for squamous cell carcinoma?",
+    "Which facial features are used to diagnose Fetal Alcohol Spectrum Disorders, such as smooth philtrum and thin upper lip?",
+    "How does prenatal alcohol exposure lead to facial dysmorphism and neurodevelopmental impairment in FASD?",
+    "What are the hallmarks of cancer",
+]
+
+TOTAL_QUERIES = 70
+WARMUP = 5
+
+# Same-length slice assignment keeps the list at exactly 70 entries.
+QUERIES[WARMUP:WARMUP + len(EARLY_PENALTY)] = EARLY_PENALTY
+QUERIES[-len(LATE_PENALTY):] = LATE_PENALTY
+
+assert len(QUERIES) == TOTAL_QUERIES, f"expected {TOTAL_QUERIES} queries, got {len(QUERIES)}"
+assert QUERIES[WARMUP:WARMUP + len(EARLY_PENALTY)] == EARLY_PENALTY, "unexpected early penalty block"
+assert QUERIES[-len(LATE_PENALTY):] == LATE_PENALTY, "unexpected late penalty block"
+
+
+
 
 def print_table(header, rows):
     col_widths = [len(h) for h in header]
@@ -115,7 +154,7 @@ def main():
     print("=" * 80)
     print(" FedRAG: TASR Stream Stress-Test (70 Queries)")
     print(f" Target Endpoint: {API_URL}")
-    print(" Warmup Threshold: W = 50 | Cold-Start Horizon: T = 30")
+    print(" Warmup Threshold: W = 5 | Cold-Start Horizon: T = 30")
     print("=" * 80)
 
     # Fetch initial node list
@@ -148,8 +187,8 @@ def main():
             strategy = routing_info.get("strategy_used", "UNKNOWN")
 
             # Phase tag
-            if idx <= 50:
-                phase_tag = f"Warmup ({idx}/50)"
+            if idx <= 5:
+                phase_tag = f"Warmup ({idx}/5)"
             else:
                 phase_tag = f"Active TASR ({idx}/70)"
 
@@ -176,23 +215,23 @@ def main():
     print(" TASR STREAM COMPLETED — FINAL TELEMETRY SUMMARY")
     print("=" * 80)
 
-    # Tabulate snapshot comparisons: Query 1 vs Query 50 vs Query 70
-    headers = ["Node ID", "Initial (t=1)", "Pre-Warmup (t=50)", "Final (t=70)", "Net Delta"]
+    # Tabulate snapshot comparisons: Query 1 vs Query 5 (warmup end) vs Query 70
+    headers = ["Node ID", "Initial (t=1)", "After Warmup (t=5)", "Final (t=70)", "Net Delta"]
     table_rows = []
 
     t1_trust = history[0]["trust"] if len(history) >= 1 else {}
-    t50_trust = history[49]["trust"] if len(history) >= 50 else {}
+    t_warm_trust = history[4]["trust"] if len(history) >= 5 else {}
     t70_trust = history[-1]["trust"] if history else {}
 
     all_tracked_nodes = sorted(list(set(list(t1_trust.keys()) + list(t70_trust.keys()))))
 
     for nid in all_tracked_nodes:
         init_v = t1_trust.get(nid, 0.70)
-        w50_v = t50_trust.get(nid, init_v)
-        fin_v = t70_trust.get(nid, w50_v)
+        warm_v = t_warm_trust.get(nid, init_v)
+        fin_v = t70_trust.get(nid, warm_v)
         delta = fin_v - init_v
         delta_str = f"{'+' if delta >= 0 else ''}{delta:.4f}"
-        table_rows.append([nid, f"{init_v:.4f}", f"{w50_v:.4f}", f"{fin_v:.4f}", delta_str])
+        table_rows.append([nid, f"{init_v:.4f}", f"{warm_v:.4f}", f"{fin_v:.4f}", delta_str])
 
     print_table(headers, table_rows)
 

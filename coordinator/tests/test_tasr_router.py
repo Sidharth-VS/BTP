@@ -213,13 +213,18 @@ def test_relevance_and_consistency_feedback_for_aligned_evidence():
     ) == pytest.approx(0.0)
 
 
-def test_consistency_and_agreement_feedback_default_to_neutral_without_evidence():
+def test_consistency_and_agreement_feedback_penalize_missing_evidence():
     router = make_router()
     router.register_client("node-a", centroid=[1.0, 0.0])
 
+    # Missing evidence is not perfect consistency; the base implementation
+    # returns 0.0 and so must this one, otherwise a silent node never decays.
     assert router.compute_consistency_feedback(
         "node-a", np.asarray([1.0, 0.0]), np.empty((0, 2))
-    ) == pytest.approx(1.0)
+    ) == pytest.approx(0.0)
+
+    # With no relevance-qualified peer there is nothing to agree with, so the
+    # signal is uninformative and the update must be skipped (empty dict).
     agreement = router.compute_agreement_feedback(
         np.asarray([1.0, 0.0]),
         ["node-a"],
@@ -227,7 +232,7 @@ def test_consistency_and_agreement_feedback_default_to_neutral_without_evidence(
         {"node-a": 0.8},
         0.5,
     )
-    assert agreement == {"node-a": 1.0}
+    assert agreement == {}
 
 
 def test_update_trust_decays_bad_signals_and_recovers_good_signals():
@@ -241,6 +246,9 @@ def test_update_trust_decays_bad_signals_and_recovers_good_signals():
     router.reputation["y-node"] = 0.8
     router.consistency_trust["x-node"] = 0.8
     router.consistency_trust["y-node"] = 0.8
+    # Recovery is clamped at 1.0, so start below the ceiling to observe it.
+    router.agreement_trust["x-node"] = 0.8
+    router.agreement_trust["y-node"] = 0.8
 
     router.update_trust(
         ["x-node", "y-node"],
@@ -280,9 +288,86 @@ def test_document_feedback_update_applies_similarity_and_profile_consistency():
     assert router.rel_feedback_history["x-node"] == pytest.approx([1.0])
     assert router.rel_feedback_history["y-node"] == pytest.approx([0.0])
     assert router.cons_feedback_history["x-node"] == pytest.approx([1.0])
-    assert router.cons_feedback_history["y-node"] == pytest.approx([0.0])
+    # y-node's evidence matches its own profile (consistency 1.0) but is not
+    # relevant to the query. Raw f_cons stays 1.0 while the relevance gate
+    # forces consistency trust down: profile evidence cannot be trusted when
+    # the node failed to retrieve anything relevant.
+    assert router.cons_feedback_history["y-node"] == pytest.approx([1.0])
     assert router.reputation["x-node"] == pytest.approx(1.0)
     assert router.reputation["y-node"] < 1.0
+    assert router.consistency_trust["y-node"] < 1.0
+
+
+def test_relevance_failure_forces_consistency_and_agreement_to_decay():
+    """Adversary repro: irrelevant evidence must not keep u_cons/u_agr at 1.0."""
+    router = TrustAwareRouter(
+        decay_factor=0.9,
+        recovery_factor=1.1111,
+        warmup_queries=0,
+        cold_start_s0=1.0,
+        cold_start_tau=1.0,
+        threshold_mode="dynamic",
+        explore_interval=0,
+        defense_mode="rel_cons_agr",
+        k_route=3,
+    )
+    forged_profile = [[1.0, 0.0]]
+    router.register_client(
+        "honest-a",
+        centroid=[1.0, 0.0],
+        profile_centroids=forged_profile,
+        doc_embeddings=[[1.0, 0.0]],
+    )
+    router.register_client(
+        "honest-b",
+        centroid=[0.9, 0.1],
+        profile_centroids=forged_profile,
+        doc_embeddings=[[1.0, 0.0]],
+    )
+    router.register_client(
+        "adversary",
+        centroid=[1.0, 0.0],
+        profile_centroids=forged_profile,
+        doc_embeddings=[[0.0, 1.0]],
+    )
+
+    query = np.asarray([1.0, 0.0])
+    honest_evidence = np.asarray([[1.0, 0.0]])
+    poisoned_evidence = np.asarray([[0.0, 1.0]])
+    evidence = {
+        "honest-a": honest_evidence,
+        "honest-b": honest_evidence,
+        "adversary": poisoned_evidence,
+    }
+
+    for _ in range(3):
+        router.update_trust(query, list(evidence), evidence)
+
+    # Relevance is lowest for the adversary -> it is outside B_q and every
+    # signal decays, rather than being scored as perfectly consistent/agreeing.
+    assert router.reputation["adversary"] == pytest.approx(0.9**3)
+    assert router.consistency_trust["adversary"] == pytest.approx(0.9**3)
+    assert router.agreement_trust["adversary"] == pytest.approx(0.9**3)
+    assert router.consistency_trust["honest-a"] == pytest.approx(1.0)
+    assert router.agreement_trust["honest-a"] == pytest.approx(1.0)
+
+
+def test_agreement_is_uninformative_without_two_comparable_peers():
+    router = make_router()
+    register_two_directional_nodes(router)
+
+    agreement = router.compute_agreement_feedback(
+        np.asarray([1.0, 0.0]),
+        ["x-node", "y-node"],
+        {
+            "x-node": np.asarray([[1.0, 0.0]]),
+            "y-node": np.asarray([[0.0, 1.0]]),
+        },
+        {"x-node": 1.0, "y-node": 0.0},
+        0.5,
+    )
+
+    assert agreement == {}
 
 
 def test_eligible_gate_records_feedback_but_does_not_penalize_excluded_node():

@@ -49,11 +49,16 @@ class TASRFeedbackEngine:
         """
         f_cons: Match between returned evidence and registered profile centroids.
         Matches exact formula from base/fedrag/rag/trust_defense.py.
+
+        Returns 0.0 when there is no evidence (or no profile) to compare: an
+        empty result set is a failure to substantiate the declared profile, not
+        perfect consistency. The previous 1.0 default let a silent node sit at
+        the trust ceiling forever.
         """
         if doc_embeddings is None or len(doc_embeddings) == 0:
-            return 1.0
+            return 0.0
         if profile_centroids is None or len(profile_centroids) == 0:
-            return 1.0
+            return 0.0
 
         q = cls._normalize(np.asarray(query_embedding, dtype=np.float64))
         docs = cls._normalize(np.asarray(doc_embeddings, dtype=np.float64))
@@ -87,8 +92,18 @@ class TASRFeedbackEngine:
         """
         f_agr: Relevance-trust-weighted peer agreement across qualified clients.
         Matches exact formula from base/fedrag/rag/trust_defense.py.
+
+        Only nodes whose evidence cleared the relevance bar (B_q) can be
+        compared with peers. Nodes outside B_q are scored 0.0: they produced no
+        evidence the qualified peers could agree with, so treating them as a
+        neutral 1.0 pinned their agreement trust at the ceiling (1.0 can never
+        fall below a median of values <= 1.0).
+
+        When fewer than two qualified, comparable peers exist the signal is
+        uninformative; an empty dict is returned so the router skips the
+        update instead of comparing a node against itself.
         """
-        agreements = {nid: 1.0 for nid in feedback_nodes}
+        agreements: Dict[str, float] = {}
         if len(feedback_nodes) < 2:
             return agreements
 
@@ -110,15 +125,19 @@ class TASRFeedbackEngine:
             else:
                 doc_centroids[nid] = None
 
+        comparable = [nid for nid in relevant if doc_centroids.get(nid) is not None]
+        if len(comparable) < 2:
+            return agreements
+
         for nid in feedback_nodes:
-            if nid not in relevant or doc_centroids.get(nid) is None:
-                agreements[nid] = 1.0
+            if nid not in comparable:
+                agreements[nid] = 0.0
                 continue
 
             weighted_sum = 0.0
             weight_total = 0.0
-            for other in relevant:
-                if other == nid or doc_centroids.get(other) is None:
+            for other in comparable:
+                if other == nid:
                     continue
                 peer_weight = node_trust_rel.get(other, 1.0)
                 sim = float(np.dot(doc_centroids[nid], doc_centroids[other]))
