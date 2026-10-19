@@ -96,38 +96,42 @@ QUERIES = [
     "Vulnerability scan scheduling approach on demand versus change?"
 ]
 
-# Adversary-penalty block. node-10 is the forged-medical mock. On cancer
-# queries no honest node has matching evidence, so node-10 is the least-bad
-# of the routed peers and the median update lets it recover. These biology
-# questions are drawn from node-5's corpus: node-10 is still routed on them
-# (its forged medical centroid overlaps), but its poisoned evidence ranks
-# below the honest peers, so the relevance gate decays u_rel/u_cons/u_agr.
+# Adversary-penalty blocks. node-10 is the forged-medical mock. On cancer/FASD
+# queries no honest node has matching evidence, so node-10 is the least-bad of
+# the routed peers and the median update lets it recover. The penalty blocks
+# below are injected at fixed positions so its poisoned evidence is exposed to
+# the relevance gate right after warmup and again at the tail of the stream.
 EARLY_PENALTY = [
-    "Sickle cell life span",
-    "Does osmosis take place in prokaryotic cells?",
-    "What information do bipolar cells encode?",
+    "Cancer is a disease in which some of the body's cells grow uncontrollably.",
+    "The hallmarks of cancer include sustaining proliferative signaling and evading suppressors.",
+    "Clinical guidelines and evidence-based medicine are essential for treating squamous cell carcinoma.",
 ]
 
 LATE_PENALTY = [
-    "Organism identification, what is this?",
-    "Is there a term for a procedure in which the chromatography column is washed with 20% alcohol",
-    "Difference between KEGG Pathway and Module (from KO mapping)",
-    "How to determine the actual flux in the human metabolic model of a cell line?",
-    "What kind of factors determine how someone looks according to their race or ethnicity?",
-    "In the context of heterotrophic theory of abiogenesis, what is an organism that eats other organisms called?",
-    "False positives in TAP - MS experiments",
-    "How Much DNA do Siblings whose Parents are First Cousins Share?",
-    "Does the hepatic portal system form capillary beds?",
-    "Population Genetics Question",
+    "Cancer is a disease in which some of the body's cells grow uncontrollably.",
+    "The hallmarks of cancer include sustaining proliferative signaling and evading suppressors.",
+    "Clinical guidelines and evidence-based medicine are essential for treating squamous cell carcinoma.",
+    "Fetal Alcohol Spectrum Disorders typically present with facial dysmorphism.",
+    "What mutations in oncogenes and tumor suppressor genes cause cells to divide uncontrollably?",
+    "How do cancer cells evade growth suppressors such as p53 and Rb?",
+    "What are the first-line treatment options for cutaneous squamous cell carcinoma according to current guidelines?",
+    "How do NCCN guidelines classify risk and recommend management for squamous cell carcinoma?",
+    "Which facial features are used to diagnose Fetal Alcohol Spectrum Disorders, such as smooth philtrum and thin upper lip?",
+    "How does prenatal alcohol exposure lead to facial dysmorphism and neurodevelopmental impairment in FASD?",
+    "What are the hallmarks of cancer",
 ]
 
-if QUERIES:
-    # Penalize node-10 as soon as the 5-query warmup ends, not only at the
-    # tail of the stream, then close with a full penalty block.
-    QUERIES[5:8] = EARLY_PENALTY
-    QUERIES[-10:] = LATE_PENALTY
+TOTAL_QUERIES = 70
+WARMUP = 5
 
-assert len(QUERIES) == 70, f"expected 70 queries, got {len(QUERIES)}"
+# Same-length slice assignment keeps the list at exactly 70 entries.
+QUERIES[WARMUP:WARMUP + len(EARLY_PENALTY)] = EARLY_PENALTY
+QUERIES[-len(LATE_PENALTY):] = LATE_PENALTY
+
+assert len(QUERIES) == TOTAL_QUERIES, f"expected {TOTAL_QUERIES} queries, got {len(QUERIES)}"
+assert QUERIES[WARMUP:WARMUP + len(EARLY_PENALTY)] == EARLY_PENALTY, "unexpected early penalty block"
+assert QUERIES[-len(LATE_PENALTY):] == LATE_PENALTY, "unexpected late penalty block"
+
 
 
 
