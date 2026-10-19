@@ -7,6 +7,7 @@ GET  /api/v1/health — Coordinator health status
 """
 import inspect
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -45,8 +46,9 @@ synthesizer = OllamaSynthesizer()
 embedder = LocalSentenceTransformerEmbeddings()
 
 # Default router. The coordinator entry point rebuilds this from the `tasr:`
-# block in config.yaml via configure_tasr() before the API starts serving.
-tasr_router = TrustAwareRouter(k_route=1)
+# block in config.yaml (optionally overridden by the K_ROUTE environment
+# variable) via configure_tasr() before the API starts serving.
+tasr_router = TrustAwareRouter()
 
 
 def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwareRouter:
@@ -57,16 +59,43 @@ def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwar
     of silently falling back to the class defaults. Keys that are absent,
     ``None``, or not accepted by ``TrustAwareRouter`` are ignored so the
     router's own defaults apply.
+
+    The routing fan-out ``k_route`` can be pinned through the ``K_ROUTE``
+    environment variable. When it is set, it overrides the value in
+    ``config.yaml`` so operators can experiment with routing width without
+    editing the file and without restarting into a broken state from a typo.
     """
     global tasr_router
 
     accepted = set(inspect.signature(TrustAwareRouter.__init__).parameters) - {"self"}
+
+    # Environment-variable pin for k_route, so operators can change routing
+    # fan-out without editing config.yaml. Validation is strict and early so a
+    # bad env value fails fast at startup rather than being discovered on the
+    # first routed query.
+    k_route_env = os.getenv("K_ROUTE")
+    if k_route_env is not None:
+        try:
+            params_k_route = int(k_route_env)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"K_ROUTE must be a positive integer, got {k_route_env!r}"
+            ) from exc
+        if params_k_route < 1:
+            raise RuntimeError(
+                f"K_ROUTE must be a positive integer, got {params_k_route}"
+            )
+    else:
+        params_k_route = None
+
     params: Dict[str, Any] = {
         key: value
         for key, value in (tasr_config or {}).items()
         if key in accepted and value is not None
     }
-    params.setdefault("k_route", 3)
+    # Env > config.yaml > router default.
+    if params_k_route is not None:
+        params["k_route"] = params_k_route
 
     tasr_router = TrustAwareRouter(**params)
     logger.info(

@@ -56,6 +56,7 @@ tasr:
   explore_interval: 20          # every N queries, add random extra node
   explore_extra: 1              # number of extra nodes for exploration
   fixed_threshold: null         # if set, use fixed threshold instead of median
+  k_route: 3                     # default routing fan-out; override via env K_ROUTE
 
 trust_db:
   path: "./trust_scores.db"     # SQLite database for trust persistence
