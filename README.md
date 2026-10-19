@@ -191,6 +191,12 @@ docker compose up --build
 The node containers wait for the coordinator health check. Initial image builds
 and first-time embedding model downloads may take a while.
 
+Each node container only sees its own corpus: `./workspace/data/<node-id>` is
+bind-mounted read-only at `/workspace/data/<node-id>`, while `nodes/app` and
+`nodes/nodes.yaml` are mounted separately and the shared node image excludes
+`nodes/data` via `.dockerignore`. Use `docker compose up -d --force-recreate`
+after changing these mounts so running containers pick up the new definition.
+
 | Service | Address |
 | --- | --- |
 | Query UI | <http://localhost:8501> |

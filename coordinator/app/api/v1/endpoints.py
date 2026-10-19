@@ -46,7 +46,7 @@ embedder = LocalSentenceTransformerEmbeddings()
 
 # Default router. The coordinator entry point rebuilds this from the `tasr:`
 # block in config.yaml via configure_tasr() before the API starts serving.
-tasr_router = TrustAwareRouter(k_route=3)
+tasr_router = TrustAwareRouter(k_route=1)
 
 
 def configure_tasr(tasr_config: Optional[Mapping[str, Any]] = None) -> TrustAwareRouter:
@@ -389,6 +389,11 @@ def get_tasr_summary() -> Dict[str, Any]:
                 "s_i": float(tasr_router._cold_start_factor(nid)),
                 "feedback_count": int(tasr_router.feedback_count.get(nid, 0)),
                 "reputation_history": tasr_router.reputation_history.get(nid, []),
+                "consistency_history": tasr_router.consistency_history.get(nid, []),
+                "agreement_history": tasr_router.agreement_history.get(nid, []),
+                "rel_feedback_history": tasr_router.rel_feedback_history.get(nid, []),
+                "cons_feedback_history": tasr_router.cons_feedback_history.get(nid, []),
+                "agr_feedback_history": tasr_router.agr_feedback_history.get(nid, []),
             }
             for nid in tasr_router.centroids
         },

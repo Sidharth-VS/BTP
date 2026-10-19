@@ -143,7 +143,7 @@ Per-node trust variables in `[0,1]`: `u_rel` (retrieval relevance), `u_cons` (pr
 - **Defense modes**: `none`, `rel_cons`, `rel_cons_agr` (switchable; gates/updates are skipped accordingly).
 - **Router defaults** (used in production because config is not wired — §12): `decay_factor=0.9`, `recovery_factor=1.02`, `min_reputation=0.01`, `warmup_queries=50`, `cold_start_s0=0.7`, `cold_start_tau=30.0`, `docs_for_feedback=5`, `threshold_mode="dynamic"`, `alpha_r=1.0`, `alpha_c=1.0`, `alpha_a=0.5`, `delta_c=0.3`, `delta_a=0.5`, `cons_winner_weight=0.6`, `explore_interval=20`, `explore_extra=1`, `defense_mode="rel_cons_agr"`, `k_route=6`.
 - **Registration** (`register_client` / `register_node` alias): normalizes and stores centroid + profile + doc-embedding pool; restores trust from an `initial_trust_state` snapshot, preserves live trust on re-registration without a snapshot, otherwise cold-starts at 1.0.
-- **Trust update** (`update_trust`, flexible 3-arg and 4-arg forms): per signal, compute a **dynamic median threshold** (or fixed), then `u ← max(u·γ, floor)` if feedback < threshold else `u ← min(u·γ_rec, 1.0)`. Updates only apply **after warmup**; histories are recorded each round. Feedback-count increments even during warmup (drives the cold-start ramp).
+- **Trust update** (`update_trust`, flexible 3-arg and 4-arg forms): per signal, compute a **dynamic median threshold** (or fixed), then `u ← max(u·γ, floor)` if feedback < threshold else `u ← min(u·γ_rec, 1.0)`. Relevance is the gate for the other two signals: only clients whose `f_rel` clears the relevance threshold can recover `u_cons`/`u_agr`; below-threshold clients decay all three. The `cons`/`agr` thresholds are computed over the relevance-qualified cohort only. Updates only apply **after warmup**; histories are recorded each round. Feedback-count increments even during warmup (drives the cold-start ramp).
 - **Exploration**: every `explore_interval` queries, one extra (low-ranked) node is appended to the dispatch set.
 
 ---
@@ -153,7 +153,8 @@ Per-node trust variables in `[0,1]`: `u_rel` (retrieval relevance), `u_cons` (pr
 `TASRFeedbackEngine` (paper-exact formulations):
 1. **Relevance** `f_rel = mean(D_returned · q)` (normalized cosine mean; falls back to chunk scores if embeddings absent).
 2. **Consistency** `f_cons`: pick winner centroid `k* = argmax(P_k · q)`, then a `ρ=0.6`-weighted blend of the winner cluster against the remaining clusters, averaged over returned docs.
-3. **Agreement** `f_agr`: relevance-qualified peers (`f_rel ≥ median`) are reduced to normalized document centroids; each node's agreement is the peer **reputation-weighted** mean cosine to the others. Nodes outside `B_q` default to 1.0.
+3. **Agreement** `f_agr`: relevance-qualified peers (`f_rel ≥ median`) are reduced to normalized document centroids; each node's agreement is the peer **reputation-weighted** mean cosine to the others. Nodes outside `B_q` are scored 0.0 (not a neutral 1.0), and when fewer than two comparable qualified peers exist the signal is uninformative and the update is skipped (empty dict).
+4. **Missing evidence**: `f_cons` returns 0.0 for an empty evidence/profile set, matching the base reference, so a silent node cannot sit at the trust ceiling.
 
 ---
 

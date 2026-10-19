@@ -402,9 +402,12 @@ class TrustAwareRouter:
             return float(np.median(values)) if values else 0.5
         return self.fixed_threshold
 
+    def _decay(self, current: float) -> float:
+        return max(current * self.decay_factor, self.min_reputation)
+
     def _update_one_score(self, current: float, feedback: float, threshold: float) -> float:
         if feedback < threshold:
-            return max(current * self.decay_factor, self.min_reputation)
+            return self._decay(current)
         return min(current * self.recovery_factor, 1.0)
 
     def update_trust(
@@ -505,26 +508,65 @@ class TrustAwareRouter:
             self._record_histories()
             return
 
-        if self.defense_mode != "none" and scored_ids:
-            threshold = self._threshold([rel.get(cid, 0.0) for cid in scored_ids])
-            for cid in scored_ids:
-                if cid in self.reputation:
-                    self.reputation[cid] = self._update_one_score(self.reputation[cid], rel.get(cid, 0.0), threshold)
+        if self.defense_mode == "none" or not scored_ids:
+            self._record_histories()
+            return
 
-        if self.defense_mode in ("rel_cons", "rel_cons_agr") and cons and scored_ids:
-            threshold = self._threshold([cons.get(cid, 1.0) for cid in scored_ids])
+        # Relevance is the gate for every signal: a client whose evidence did
+        # not clear the relevance bar cannot have its consistency/agreement
+        # "recover" on that same, irrelevant evidence.
+        rel_threshold = self._threshold([rel.get(cid, 0.0) for cid in scored_ids])
+        for cid in scored_ids:
+            if cid in self.reputation:
+                self.reputation[cid] = self._update_one_score(
+                    self.reputation[cid], rel.get(cid, 0.0), rel_threshold
+                )
+
+        qualified_ids = {
+            cid for cid in scored_ids if rel.get(cid, 0.0) >= rel_threshold
+        }
+        if not qualified_ids:
+            # Fixed thresholds can leave every client below the bar; with no
+            # qualified reference cohort the cons/agr comparison is undefined.
+            self._record_histories()
+            return
+
+        # Compute the cons/agr thresholds over the relevance-qualified cohort
+        # only. Including clients whose evidence failed relevance let a bad
+        # client drag the median down and "pass" against an equally weak peer
+        # (the node-10 u_cons = 1.0 bug). Clients that failed relevance are
+        # decayed on these signals instead of being scored on a relative median.
+        if self.defense_mode in ("rel_cons", "rel_cons_agr") and cons:
+            cons_threshold = self._threshold(
+                [cons.get(cid, 1.0) for cid in qualified_ids]
+            )
             for cid in scored_ids:
-                if cid in self.consistency_trust:
+                if cid not in self.consistency_trust:
+                    continue
+                if cid in qualified_ids:
                     self.consistency_trust[cid] = self._update_one_score(
-                        self.consistency_trust[cid], cons.get(cid, 1.0), threshold
+                        self.consistency_trust[cid], cons.get(cid, 1.0), cons_threshold
+                    )
+                else:
+                    self.consistency_trust[cid] = self._decay(
+                        self.consistency_trust[cid]
                     )
 
-        if self.defense_mode == "rel_cons_agr" and agr and scored_ids:
-            threshold = self._threshold([agr.get(cid, 1.0) for cid in scored_ids])
+        if self.defense_mode == "rel_cons_agr" and agr:
+            agr_threshold = self._threshold(
+                [agr.get(cid, 0.0) for cid in qualified_ids]
+            )
             for cid in scored_ids:
-                if cid in self.agreement_trust:
-                    self.agreement_trust[cid] = self._update_one_score(
-                        self.agreement_trust[cid], agr.get(cid, 1.0), threshold
+                if cid not in self.agreement_trust:
+                    continue
+                if cid in qualified_ids:
+                    if cid in agr:
+                        self.agreement_trust[cid] = self._update_one_score(
+                            self.agreement_trust[cid], agr.get(cid, 0.0), agr_threshold
+                        )
+                else:
+                    self.agreement_trust[cid] = self._decay(
+                        self.agreement_trust[cid]
                     )
 
         self._record_histories()

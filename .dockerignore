@@ -1,0 +1,9 @@
+# Keep host-only state out of the build context. In particular, node corpora
+# live in workspace/data/<node> and are bind-mounted per container; the sample
+# fixtures in nodes/data must not be baked into the shared node image.
+.git
+.venv
+workspace
+nodes/data
+**/__pycache__
+**/*.pyc

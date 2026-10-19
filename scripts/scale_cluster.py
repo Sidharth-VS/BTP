@@ -157,7 +157,7 @@ def main():
             "volumes": [
                 f"./workspace/chroma/node-{i}:/workspace/chroma/node-{i}",
                 f"./workspace/data/node-{i}:/workspace/data/node-{i}:ro",
-                "./nodes:/app/nodes",
+                "./nodes/app:/app/nodes/app:ro",
                 "./shared:/app/shared",
                 "./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro",
                 "/etc/machine-id:/host/etc/machine-id:ro"
@@ -180,7 +180,7 @@ def main():
             ] + THREAD_LIMITS,
             "deploy": {"resources": {"limits": {"cpus": str(cpu_per_node)}}},
             "volumes": [
-                "./nodes:/app/nodes",
+                "./nodes/app:/app/nodes/app:ro",
                 "./shared:/app/shared",
                 "./tests:/app/tests",
                 "/etc/machine-id:/host/etc/machine-id:ro"

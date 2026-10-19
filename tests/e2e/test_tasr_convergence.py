@@ -162,7 +162,6 @@ def test_trust_state_round_trip_preserves_converged_routing(tmp_path, router):
 def test_unscored_routed_node_is_counted_but_not_penalized(router):
     register_similar_nodes(router)
     router.update_trust(
-        [1.0, 0.0],
         ["honest", "unreliable"],
         {"honest": 1.0, "unreliable": 0.0},
         {"honest": 1.0, "unreliable": 0.0},

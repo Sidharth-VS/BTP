@@ -86,7 +86,7 @@ services:
     volumes:
     - ./workspace/chroma/node-1:/workspace/chroma/node-1
     - ./workspace/data/node-1:/workspace/data/node-1:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -117,7 +117,7 @@ services:
     volumes:
     - ./workspace/chroma/node-2:/workspace/chroma/node-2
     - ./workspace/data/node-2:/workspace/data/node-2:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -148,7 +148,7 @@ services:
     volumes:
     - ./workspace/chroma/node-3:/workspace/chroma/node-3
     - ./workspace/data/node-3:/workspace/data/node-3:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -179,7 +179,7 @@ services:
     volumes:
     - ./workspace/chroma/node-4:/workspace/chroma/node-4
     - ./workspace/data/node-4:/workspace/data/node-4:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -210,7 +210,7 @@ services:
     volumes:
     - ./workspace/chroma/node-5:/workspace/chroma/node-5
     - ./workspace/data/node-5:/workspace/data/node-5:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -241,7 +241,7 @@ services:
     volumes:
     - ./workspace/chroma/node-6:/workspace/chroma/node-6
     - ./workspace/data/node-6:/workspace/data/node-6:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -272,7 +272,7 @@ services:
     volumes:
     - ./workspace/chroma/node-7:/workspace/chroma/node-7
     - ./workspace/data/node-7:/workspace/data/node-7:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -303,7 +303,7 @@ services:
     volumes:
     - ./workspace/chroma/node-8:/workspace/chroma/node-8
     - ./workspace/data/node-8:/workspace/data/node-8:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -334,7 +334,7 @@ services:
     volumes:
     - ./workspace/chroma/node-9:/workspace/chroma/node-9
     - ./workspace/data/node-9:/workspace/data/node-9:ro
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./nodes/nodes.yaml:/app/nodes/nodes.yaml:ro
     - /etc/machine-id:/host/etc/machine-id:ro
@@ -367,7 +367,7 @@ services:
         limits:
           cpus: '1.9'
     volumes:
-    - ./nodes:/app/nodes
+    - ./nodes/app:/app/nodes/app:ro
     - ./shared:/app/shared
     - ./tests:/app/tests
     - /etc/machine-id:/host/etc/machine-id:ro
