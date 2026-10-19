@@ -16,7 +16,7 @@ services:
     - ./shared:/app/shared
     environment:
     - COORDINATOR_CONFIG=/app/coordinator/config.yaml
-    - K_ROUTE=2
+    - K_ROUTE=3
     - API_KEY=${API_KEY:-fedrag-dev-key}
     - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
