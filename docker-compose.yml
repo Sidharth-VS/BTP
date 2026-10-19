@@ -19,11 +19,11 @@ services:
     - API_KEY=${API_KEY:-fedrag-dev-key}
     - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
@@ -74,15 +74,15 @@ services:
     - NODE_ID=node-1
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-1:/workspace/chroma/node-1
     - ./workspace/data/node-1:/workspace/data/node-1:ro
@@ -105,15 +105,15 @@ services:
     - NODE_ID=node-2
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-2:/workspace/chroma/node-2
     - ./workspace/data/node-2:/workspace/data/node-2:ro
@@ -136,15 +136,15 @@ services:
     - NODE_ID=node-3
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-3:/workspace/chroma/node-3
     - ./workspace/data/node-3:/workspace/data/node-3:ro
@@ -167,15 +167,15 @@ services:
     - NODE_ID=node-4
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-4:/workspace/chroma/node-4
     - ./workspace/data/node-4:/workspace/data/node-4:ro
@@ -198,15 +198,15 @@ services:
     - NODE_ID=node-5
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-5:/workspace/chroma/node-5
     - ./workspace/data/node-5:/workspace/data/node-5:ro
@@ -229,15 +229,15 @@ services:
     - NODE_ID=node-6
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-6:/workspace/chroma/node-6
     - ./workspace/data/node-6:/workspace/data/node-6:ro
@@ -260,15 +260,15 @@ services:
     - NODE_ID=node-7
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-7:/workspace/chroma/node-7
     - ./workspace/data/node-7:/workspace/data/node-7:ro
@@ -291,15 +291,15 @@ services:
     - NODE_ID=node-8
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-8:/workspace/chroma/node-8
     - ./workspace/data/node-8:/workspace/data/node-8:ro
@@ -322,15 +322,15 @@ services:
     - NODE_ID=node-9
     - NODES_CONFIG=/app/nodes/nodes.yaml
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./workspace/chroma/node-9:/workspace/chroma/node-9
     - ./workspace/data/node-9:/workspace/data/node-9:ro
@@ -357,15 +357,15 @@ services:
     - NODE_ID=node-10
     - COORDINATOR_ADDRESS=fedrag-coordinator:9091
     - API_KEY=${API_KEY:-fedrag-dev-key}
-    - OMP_NUM_THREADS=3
-    - OPENBLAS_NUM_THREADS=3
-    - MKL_NUM_THREADS=3
-    - VECLIB_MAXIMUM_THREADS=3
-    - NUMEXPR_NUM_THREADS=3
+    - OMP_NUM_THREADS=2
+    - OPENBLAS_NUM_THREADS=2
+    - MKL_NUM_THREADS=2
+    - VECLIB_MAXIMUM_THREADS=2
+    - NUMEXPR_NUM_THREADS=2
     deploy:
       resources:
         limits:
-          cpus: '3.0'
+          cpus: '1.9'
     volumes:
     - ./nodes:/app/nodes
     - ./shared:/app/shared
