@@ -322,7 +322,9 @@ def query(req: QueryRequest) -> QueryResponse:
 def attest_node(req: AttestationRequest) -> AttestationResponse:
     """Pre-flight hardware attestation handshake."""
     flower = get_flower_server()
-    admitted, msg, lease = flower.admission_manager.attest_and_admit(req)
+    admitted, msg, lease = flower.admission_manager.attest_and_admit(
+        req, channel="rest-preflight"
+    )
     if not admitted:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

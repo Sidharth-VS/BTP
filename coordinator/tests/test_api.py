@@ -39,7 +39,7 @@ class FakeAdmissionManager:
         return self.authorized.get(node_id, False)
 
     def attest_and_admit(
-        self, request: AttestationRequest
+        self, request: AttestationRequest, channel: str = "internal"
     ) -> tuple[bool, str, str]:
         self.attest_calls.append(request)
         return self.attestation_result

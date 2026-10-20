@@ -1,9 +1,13 @@
+import json
+import logging
 import os
+import re
 import shutil
+import statistics
 import tempfile
 import time
 import pytest
-from coordinator.app.flwr_server.admission import NodeAdmissionManager
+from coordinator.app.flwr_server.admission import _LatencyStats, NodeAdmissionManager
 from shared.schemas.common import AttestationRequest
 from coordinator.app.tasr.router import TrustAwareRouter
 
@@ -62,6 +66,239 @@ def test_admission_and_host_quota_enforcement(temp_storage):
     admitted3, msg3, lease3 = manager.attest_and_admit(req3)
     assert admitted3 is True
     assert manager.is_authorized("node-3") is True
+
+
+def test_attestation_latency_is_logged_per_node(temp_storage, caplog):
+    """Every admission attempt must emit one parseable latency line, including
+    rejections, so the reported distribution is not biased to successes."""
+    manager = NodeAdmissionManager(
+        enabled=True,
+        max_nodes_per_host=1,
+        storage_path=temp_storage,
+    )
+    req = AttestationRequest(
+        node_id="node-latency",
+        fingerprint="e" * 64,
+        timestamp=time.time(),
+        nonce="nonce-latency",
+        hardware_summary={"cpu": "core-i7"},
+    )
+
+    with caplog.at_level(logging.INFO, logger="coordinator.admission"):
+        admitted, _, _ = manager.attest_and_admit(req, channel="rest-preflight")
+        # Same host, second node -> quota rejection, which must be measured too.
+        rejected, _, _ = manager.attest_and_admit(
+            req.model_copy(update={"node_id": "node-latency-2", "nonce": "nonce-2"}),
+            channel="rest-preflight",
+        )
+
+    assert admitted is True
+    assert rejected is False
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if "Attestation latency" in record.getMessage()
+    ]
+    assert len(lines) == 2
+
+    assert "channel=rest-preflight" in lines[0]
+    assert "node='node-latency'" in lines[0]
+    assert "outcome=admitted:new" in lines[0]
+    assert "verify=" in lines[0] and "total=" in lines[0]
+    assert "outcome=rejected:host_quota" in lines[1]
+
+
+def test_latency_stats_moments():
+    """Welford accumulator must produce the sample mean and std (n-1)."""
+    stats = _LatencyStats()
+    for value in (10.0, 20.0, 30.0):
+        stats.add(value)
+
+    assert stats.count == 3
+    assert stats.mean_ms == pytest.approx(20.0)
+    assert stats.std_ms == pytest.approx(10.0)
+    assert stats.min_ms == 10.0
+    assert stats.max_ms == 30.0
+
+    empty = _LatencyStats().as_dict()
+    assert empty == {
+        "count": 0,
+        "mean_ms": 0.0,
+        "std_ms": 0.0,
+        "min_ms": None,
+        "max_ms": None,
+    }
+
+
+def test_admission_latency_summary_matches_logged_samples(temp_storage, caplog):
+    """Summary mean/std must agree with the per-attempt latency lines."""
+    manager = NodeAdmissionManager(
+        enabled=True,
+        max_nodes_per_host=1,
+        storage_path=temp_storage,
+    )
+    req = AttestationRequest(
+        node_id="node-1",
+        fingerprint="a" * 64,
+        timestamp=time.time(),
+        nonce="nonce-1",
+    )
+
+    with caplog.at_level(logging.INFO, logger="coordinator.admission"):
+        for _ in range(4):  # first admission, then refreshes
+            admitted, _, _ = manager.attest_and_admit(req)
+            assert admitted is True
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if "Attestation latency" in record.getMessage()
+    ]
+    assert len(lines) == 4
+    samples = [
+        float(re.search(r"total=([\d.]+) ms", line).group(1)) for line in lines
+    ]
+
+    summary = manager.get_summary()["latency"]["admission_handshake"]
+    assert summary["count"] == 4
+    assert summary["mean_ms"] == pytest.approx(statistics.fmean(samples), abs=2e-3)
+    assert summary["std_ms"] == pytest.approx(statistics.stdev(samples), abs=2e-3)
+    assert summary["by_channel"]["internal"]["count"] == 4
+
+
+def test_registration_latency_logged_on_new_node_boot(temp_storage, caplog):
+    """Registration latency is sampled on first registry appearance and on a
+    new node boot, but not on a refresh."""
+    manager = NodeAdmissionManager(
+        enabled=True,
+        max_nodes_per_host=1,
+        storage_path=temp_storage,
+    )
+    started_at = time.time() - 3.0
+    req = AttestationRequest(
+        node_id="node-reg",
+        fingerprint="b" * 64,
+        timestamp=time.time(),
+        nonce="nonce-reg",
+        node_started_at=started_at,
+    )
+
+    with caplog.at_level(logging.INFO, logger="coordinator.admission"):
+        admitted, _, _ = manager.attest_and_admit(req, channel="rest-preflight")
+        # Refresh of the same boot: must not add a second sample.
+        refreshed, _, _ = manager.attest_and_admit(req, channel="grpc-handshake")
+
+    assert admitted is True
+    assert refreshed is True
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if "Registration latency" in record.getMessage()
+    ]
+    assert len(lines) == 1
+    assert "node='node-reg'" in lines[0]
+    assert "registry=first_admission" in lines[0]
+    assert "total=" in lines[0] and "mean=" in lines[0] and "std=" in lines[0]
+
+    stats = manager.get_summary()["latency"]["registration"]["first_admission"]
+    assert stats["count"] == 1
+    assert stats["mean_ms"] >= 3000.0
+
+    with open(temp_storage, "r", encoding="utf-8") as f:
+        registry = json.load(f)
+    entry = registry["node_registry"]["node-reg"]
+    assert entry["registration_latency_ms"] >= 3000.0
+    assert entry["node_started_at"] == started_at
+    assert "first_seen_at" in entry
+
+    # The same boot re-registering must not be sampled again.
+    manager.record_registration_latency("node-reg", "grpc_node_registry", started_at)
+    manager.record_registration_latency("node-reg", "grpc_node_registry", started_at)
+    gRPC_stats = manager.get_summary()["latency"]["registration"]["grpc_node_registry"]
+    assert gRPC_stats["count"] == 1
+    assert gRPC_stats["mean_ms"] >= 3000.0
+
+    # A new node boot (newer start time) is a new registration sample.
+    manager.release_node(node_id="node-reg")
+    rebooted = req.model_copy(update={"node_started_at": time.time() - 1.0})
+    admitted_again, _, _ = manager.attest_and_admit(rebooted, channel="grpc-handshake")
+    assert admitted_again is True
+    assert (
+        manager.get_summary()["latency"]["registration"]["first_admission"]["count"]
+        == 2
+    )
+
+
+def test_latency_metrics_persisted_to_file(temp_storage):
+    """The persisted snapshot must mirror the summary values for both metrics."""
+    metrics_path = os.path.join(os.path.dirname(temp_storage), "latency_metrics.json")
+    manager = NodeAdmissionManager(
+        enabled=True,
+        max_nodes_per_host=2,
+        storage_path=temp_storage,
+        latency_storage_path=metrics_path,
+    )
+
+    # The file exists from startup, so a report can always read it.
+    with open(metrics_path, "r", encoding="utf-8") as f:
+        initial = json.load(f)
+    assert initial["admission_handshake"]["count"] == 0
+    assert initial["registration"] == {}
+    assert "updated_at" in initial
+
+    started_at = time.time() - 2.0
+    req = AttestationRequest(
+        node_id="node-file",
+        fingerprint="d" * 64,
+        timestamp=time.time(),
+        nonce="nonce-file",
+        node_started_at=started_at,
+    )
+    admitted, _, _ = manager.attest_and_admit(req, channel="rest-preflight")
+    assert admitted is True
+    manager.record_registration_latency("node-file", "grpc_node_registry", started_at)
+
+    with open(metrics_path, "r", encoding="utf-8") as f:
+        saved = json.load(f)
+
+    summary = manager.get_summary()["latency"]
+    assert saved["admission_handshake"] == summary["admission_handshake"]
+    assert saved["registration"] == summary["registration"]
+    assert saved["admission_handshake"]["by_channel"]["rest-preflight"]["count"] == 1
+    assert saved["registration"]["first_admission"]["count"] == 1
+    assert saved["registration"]["first_admission"]["mean_ms"] >= 2000.0
+    assert saved["registration"]["grpc_node_registry"]["count"] == 1
+    assert not os.path.exists(metrics_path + ".tmp")
+
+
+def test_registration_latency_without_node_start_time(temp_storage, caplog):
+    """A node that reports no start time is logged as n/a and never sampled."""
+    manager = NodeAdmissionManager(
+        enabled=True,
+        max_nodes_per_host=1,
+        storage_path=temp_storage,
+    )
+    req = AttestationRequest(
+        node_id="node-no-start",
+        fingerprint="c" * 64,
+        timestamp=time.time(),
+        nonce="nonce-no-start",
+    )
+
+    with caplog.at_level(logging.INFO, logger="coordinator.admission"):
+        admitted, _, _ = manager.attest_and_admit(req, channel="rest-preflight")
+
+    assert admitted is True
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if "Registration latency" in record.getMessage()
+    ]
+    assert len(lines) == 1
+    assert "total=n/a" in lines[0]
+    assert manager.get_summary()["latency"]["registration"] == {}
 
 
 def test_node_reconnection_and_disconnect(temp_storage):

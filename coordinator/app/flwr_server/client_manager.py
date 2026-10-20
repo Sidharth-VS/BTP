@@ -59,6 +59,10 @@ class LoggingClientManager(SimpleClientManager):
         if client.cid not in self.clients:
             return
 
+        # Attestation latency is measured from here, after the deliberate
+        # settling sleep, so the reported number is the actual handshake cost.
+        handshake_started = time.perf_counter()
+
         try:
             logger.info("🔍 Requesting properties and hardware attestation from CID: %s...", client.cid)
             props = {}
@@ -90,6 +94,8 @@ class LoggingClientManager(SimpleClientManager):
             logger.warning("Could not retrieve properties from CID %s: %s", client.cid, e)
             return
 
+        properties_ms = (time.perf_counter() - handshake_started) * 1000.0
+
         # Client may have disconnected while we were waiting for properties
         if client.cid not in self.clients:
             return
@@ -108,6 +114,16 @@ class LoggingClientManager(SimpleClientManager):
         doc_embeddings = json.loads(doc_emb_str) if doc_emb_str else None
         doc_count = int(props.get("doc_count", 0))
 
+        # Node-reported process start, used to time node start -> first
+        # appearance in the live node registry (`GET /api/v1/nodes`).
+        node_started_at_raw = props.get("node_started_at")
+        try:
+            node_started_at = (
+                float(node_started_at_raw) if node_started_at_raw is not None else None
+            )
+        except (TypeError, ValueError):
+            node_started_at = None
+
         # A node that could not build its profile still authenticates (attestation is
         # deliberately independent of ChromaDB), but it must not be silently routed as
         # a zero vector — say so at admission time.
@@ -120,10 +136,26 @@ class LoggingClientManager(SimpleClientManager):
                 props.get("profile_error"),
             )
 
+        def _log_handshake_latency(
+            outcome: str, admission_ms: Optional[float] = None
+        ) -> None:
+            """Reports the per-node handshake cost: property fetch + admission."""
+            total_ms = (time.perf_counter() - handshake_started) * 1000.0
+            logger.info(
+                "⏱️  gRPC attestation handshake latency | node='%s' | properties=%.3f ms | "
+                "admission=%s | total=%.3f ms | outcome=%s",
+                node_id,
+                properties_ms,
+                f"{admission_ms:.3f} ms" if admission_ms is not None else "n/a",
+                total_ms,
+                outcome,
+            )
+
         # Admission & Attestation Check
         admission_mgr = getattr(self.strategy, "admission_manager", None)
         if admission_mgr and admission_mgr.enabled:
             if not attestation_raw:
+                _log_handshake_latency("rejected:no_payload")
                 print(f"🚨 [Coordinator] HARD DISCONNECT: Node '{node_id}' (CID: {client.cid}) provided no attestation.", flush=True)
                 logger.warning("🚨 HARD DISCONNECT: Node '%s' (CID: %s) provided no hardware attestation.", node_id, client.cid)
                 self.unregister(client)
@@ -132,7 +164,14 @@ class LoggingClientManager(SimpleClientManager):
             try:
                 att_data = json.loads(str(attestation_raw))
                 req = AttestationRequest(**att_data)
-                admitted, msg, _ = admission_mgr.attest_and_admit(req)
+                admission_started = time.perf_counter()
+                admitted, msg, _ = admission_mgr.attest_and_admit(
+                    req, channel="grpc-handshake"
+                )
+                admission_ms = (time.perf_counter() - admission_started) * 1000.0
+                _log_handshake_latency(
+                    "admitted" if admitted else "rejected:admission", admission_ms
+                )
                 if not admitted:
                     print(f"🚨 [Coordinator] HARD DISCONNECT: Sybil node rejected: '{node_id}' (CID: {client.cid}) - {msg}", flush=True)
                     logger.warning("🚨 HARD DISCONNECT: Sybil node rejected: '%s' (CID: %s): %s", node_id, client.cid, msg)
@@ -142,6 +181,7 @@ class LoggingClientManager(SimpleClientManager):
                 fingerprint = req.fingerprint
                 admission_mgr.bind_grpc_cid(client.cid, node_id)
             except Exception as exc:
+                _log_handshake_latency("rejected:error")
                 print(f"🚨 [Coordinator] HARD DISCONNECT: Attestation verification error for '{node_id}': {exc}", flush=True)
                 logger.error("Attestation error for node '%s': %s", node_id, exc)
                 self.unregister(client)
@@ -149,6 +189,7 @@ class LoggingClientManager(SimpleClientManager):
 
         # Successfully admitted
         if self.strategy and hasattr(self.strategy, "_node_registry"):
+            is_first_registration = client.cid not in self.strategy._node_registry
             self.strategy._node_registry[client.cid] = {
                 "node_id": node_id,
                 "status": "healthy",
@@ -161,6 +202,12 @@ class LoggingClientManager(SimpleClientManager):
                 "profile_error": props.get("profile_error"),
                 "authorized": True,
             }
+            # Registration latency is measured only on first appearance in the
+            # live registry, not on reconnects of an already-registered CID.
+            if is_first_registration and admission_mgr is not None:
+                admission_mgr.record_registration_latency(
+                    node_id, "grpc_node_registry", node_started_at
+                )
 
         # Register into TASR router and restore historical trust immediately
         try:

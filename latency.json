@@ -1,0 +1,49 @@
+{
+  "updated_at": "2026-10-20T14:36:19.784157Z",
+  "admission_handshake": {
+    "count": 556,
+    "mean_ms": 0.237,
+    "std_ms": 0.376,
+    "min_ms": 0.075,
+    "max_ms": 5.085,
+    "by_channel": {
+      "grpc-evaluate": {
+        "count": 536,
+        "mean_ms": 0.198,
+        "std_ms": 0.203,
+        "min_ms": 0.075,
+        "max_ms": 3.158
+      },
+      "grpc-handshake": {
+        "count": 10,
+        "mean_ms": 0.263,
+        "std_ms": 0.11,
+        "min_ms": 0.169,
+        "max_ms": 0.551
+      },
+      "rest-preflight": {
+        "count": 10,
+        "mean_ms": 2.249,
+        "std_ms": 1.284,
+        "min_ms": 1.225,
+        "max_ms": 5.085
+      }
+    }
+  },
+  "registration": {
+    "first_admission": {
+      "count": 9,
+      "mean_ms": 17.122,
+      "std_ms": 2.537,
+      "min_ms": 13.846,
+      "max_ms": 20.913
+    },
+    "grpc_node_registry": {
+      "count": 4,
+      "mean_ms": 93849.354,
+      "std_ms": 24606.201,
+      "min_ms": 60057.686,
+      "max_ms": 116035.59
+    }
+  }
+}

@@ -2,10 +2,12 @@ import time
 import pytest
 from shared.auth.attestation import (
     HardwareCollector,
+    NodeAttestationPayload,
     generate_host_fingerprint,
     create_attestation_payload,
     verify_attestation_payload,
 )
+from shared.schemas.common import AttestationRequest
 
 
 def test_hardware_collector_probes():
@@ -34,6 +36,23 @@ def test_attestation_payload_creation_and_verification():
     is_valid, reason = verify_attestation_payload(p_dict)
     assert is_valid is True
     assert reason == "Valid"
+
+
+def test_payload_carries_node_started_at_into_attestation_request():
+    """Registration-latency timing needs the node's start time to survive the
+    REST/gRPC payload round trip, and must stay optional for older nodes."""
+    payload = create_attestation_payload("node-test-1", node_started_at=1234.5)
+    p_dict = payload.to_dict()
+
+    assert p_dict["node_started_at"] == 1234.5
+    assert NodeAttestationPayload.from_dict(p_dict).node_started_at == 1234.5
+    assert AttestationRequest(**p_dict).node_started_at == 1234.5
+
+    # Nodes that do not report a start time must still attest.
+    assert create_attestation_payload("node-test-1").node_started_at is None
+    assert AttestationRequest(**p_dict).model_copy(
+        update={"node_started_at": None}
+    ).node_started_at is None
 
 
 def test_attestation_tampering_detection():

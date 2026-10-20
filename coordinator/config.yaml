@@ -64,6 +64,9 @@ trust_db:
 # Hardware Attestation & Sybil Defense
 attestation:
   enabled: true
-  max_nodes_per_host: 50
+  max_nodes_per_host: 20
   freshness_window_seconds: 3000
   storage_path: "workspace/coordinator/attestation_registry.json"
+  # Aggregate admission/registration latency values (count/mean/std/min/max),
+  # rewritten on every sample. Set to null to disable the snapshot.
+  latency_storage_path: "workspace/coordinator/latency_metrics.json"
