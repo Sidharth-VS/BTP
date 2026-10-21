@@ -1,0 +1,120 @@
+{
+  "fingerprints": {
+    "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2": {
+      "allocated_nodes": [
+        "node-8",
+        "node-2",
+        "node-1",
+        "node-6",
+        "node-3",
+        "node-10",
+        "node-7",
+        "node-9",
+        "node-5",
+        "node-4"
+      ],
+      "hardware_summary": {
+        "cpu_model": "13th Gen Intel(R) Core(TM) i5-13420H",
+        "cpu_cores": 12,
+        "arch": "x86_64",
+        "os": "Linux"
+      },
+      "first_registered_at": "2026-10-20T14:30:14.811768Z",
+      "last_seen_at": "2026-10-20T14:30:18.332802Z",
+      "trust_state": null,
+      "rejection_history": []
+    }
+  },
+  "node_registry": {
+    "node-8": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "0edb2f6bc53b41f7a283e43a18e8f7a2",
+      "admitted_at": "2026-10-20T14:30:14.811768Z",
+      "node_started_at": 1792506614.7967896,
+      "first_seen_at": 1792506614.811821,
+      "registration_latency_ms": 15.03133773803711
+    },
+    "node-2": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "50fe562c39644757924c77fcb297c224",
+      "admitted_at": "2026-10-20T14:30:15.291827Z",
+      "node_started_at": 1792506615.2780252,
+      "first_seen_at": 1792506615.2918715,
+      "registration_latency_ms": 13.846397399902344
+    },
+    "node-1": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "cea6437772b5442eab486aaaef5b343d",
+      "admitted_at": "2026-10-20T14:30:15.497267Z",
+      "node_started_at": 1792506615.477615,
+      "first_seen_at": 1792506615.4973207,
+      "registration_latency_ms": 19.705533981323242
+    },
+    "node-6": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "673dfd5dd0c445c5b4c26efdc85b3d4b",
+      "admitted_at": "2026-10-20T14:30:15.519122Z",
+      "node_started_at": 1792506615.4998221,
+      "first_seen_at": 1792506615.5191908,
+      "registration_latency_ms": 19.368648529052734
+    },
+    "node-3": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "da9faf51124c42f2b842f0abecbbd197",
+      "admitted_at": "2026-10-20T14:30:16.581340Z",
+      "node_started_at": 1792506616.5630434,
+      "first_seen_at": 1792506616.5813866,
+      "registration_latency_ms": 18.343210220336914
+    },
+    "node-10": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "2d752644617a46aba4542665f8ffc4d4",
+      "admitted_at": "2026-10-20T14:30:16.724654Z",
+      "node_started_at": null,
+      "first_seen_at": 1792506616.7247243,
+      "registration_latency_ms": null
+    },
+    "node-7": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "270a4977c0344d71b7d8b02544914e16",
+      "admitted_at": "2026-10-20T14:30:17.107895Z",
+      "node_started_at": 1792506617.0911171,
+      "first_seen_at": 1792506617.107941,
+      "registration_latency_ms": 16.823768615722656
+    },
+    "node-9": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "1d543641bda14ee68a6fc5ebcf16f986",
+      "admitted_at": "2026-10-20T14:30:17.428493Z",
+      "node_started_at": 1792506617.4133818,
+      "first_seen_at": 1792506617.428532,
+      "registration_latency_ms": 15.150070190429688
+    },
+    "node-5": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "cb7e13c280d44dfaa8eb97c66cf0c8a9",
+      "admitted_at": "2026-10-20T14:30:17.905967Z",
+      "node_started_at": 1792506617.8910892,
+      "first_seen_at": 1792506617.9060092,
+      "registration_latency_ms": 14.91999626159668
+    },
+    "node-4": {
+      "fingerprint": "d6393a6d6910a0cedbdd78f5e99c91c65d5014fa410f8fc774f86ec8d17ac6e2",
+      "authorized": true,
+      "lease_token": "c053b473832949bea3671ffb28400eb3",
+      "admitted_at": "2026-10-20T14:30:18.332802Z",
+      "node_started_at": 1792506618.3119645,
+      "first_seen_at": 1792506618.3328774,
+      "registration_latency_ms": 20.912885665893555
+    }
+  }
+}

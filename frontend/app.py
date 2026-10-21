@@ -192,32 +192,32 @@ def render_result(result: dict) -> None:
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.header("Coordinator")
-    try:
-        health = fetch_health(BASE_API_URL, API_KEY)
-        st.success(
-            f"Online · {health.get('healthy_nodes', 0)}/"
-            f"{health.get('registered_nodes', 0)} nodes healthy"
-        )
-    except requests.exceptions.RequestException as exc:
-        st.error("Unreachable")
-        st.caption(f"`{BASE_API_URL}`\n\n{exc}")
+    # st.header("Coordinator")
+    # try:
+    #     health = fetch_health(BASE_API_URL, API_KEY)
+    #     st.success(
+    #         f"Online · {health.get('healthy_nodes', 0)}/"
+    #         f"{health.get('registered_nodes', 0)} nodes healthy"
+    #     )
+    # except requests.exceptions.RequestException as exc:
+    #     st.error("Unreachable")
+    #     st.caption(f"`{BASE_API_URL}`\n\n{exc}")
 
-    st.caption(f"API: `{BASE_API_URL}`")
-    st.divider()
+    # st.caption(f"API: `{BASE_API_URL}`")
+    # st.divider()
 
-    st.header("Example queries")
-    for index, (label, example) in enumerate(EXAMPLES):
-        if st.button(label, key=f"example_{index}", width="stretch"):
-            st.session_state.query_text = example
-            st.rerun()
+    # st.header("Example queries")
+    # for index, (label, example) in enumerate(EXAMPLES):
+    #     if st.button(label, key=f"example_{index}", width="stretch"):
+    #         st.session_state.query_text = example
+    #         st.rerun()
 
-    st.divider()
-    st.header("Session")
-    if st.button("🧹 Clear results", width="stretch"):
-        st.session_state.last_result = None
-        st.session_state.history = []
-        st.rerun()
+    # st.divider()
+    # st.header("Session")
+    # if st.button("🧹 Clear results", width="stretch"):
+    #     st.session_state.last_result = None
+    #     st.session_state.history = []
+    #     st.rerun()
 
     if st.session_state.history:
         st.caption("Recent queries")

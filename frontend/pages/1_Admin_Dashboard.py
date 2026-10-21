@@ -56,22 +56,22 @@ def histories_frame(histories: dict) -> pd.DataFrame:
 
 
 st.title("🛡️ TASR Network Analytics")
-st.caption(
-    "Live trust components, evidence-feedback signals, cold-start schedule, and "
-    "hardware-attestation state for every registered node."
-)
+# st.caption(
+#     "Live trust components, evidence-feedback signals, cold-start schedule, and "
+#     "hardware-attestation state for every registered node."
+# )
 
 top_left, top_mid, top_right = st.columns([1, 1, 4])
 with top_left:
     refresh = st.button("🔄 Refresh", type="primary", width="stretch")
-with top_mid:
-    if st.button("🧹 Clear cache", width="stretch"):
-        st.cache_data.clear()
-        st.rerun()
-with top_right:
-    st.caption(
-        f"Coordinator: `{BASE_API_URL}` · fetched {datetime.now().strftime('%H:%M:%S')}"
-    )
+# with top_mid:
+#     if st.button("🧹 Clear cache", width="stretch"):
+#         st.cache_data.clear()
+#         st.rerun()
+# with top_right:
+#     st.caption(
+#         f"Coordinator: `{BASE_API_URL}` · fetched {datetime.now().strftime('%H:%M:%S')}"
+#     )
 
 if refresh:
     st.cache_data.clear()
@@ -114,10 +114,7 @@ metrics[0].metric("Registered nodes", len(df))
 metrics[1].metric(
     "Healthy", int((df.get("status") == "healthy").sum()) if "status" in df else 0
 )
-metrics[2].metric(
-    f"Low trust (<{LOW_TRUST})",
-    int((df["trust_score"] < LOW_TRUST).sum()) if "trust_score" in df else 0,
-)
+metrics[2].metric("Total queries", total_queries)
 metrics[3].metric(
     "Average τ",
     f"{df['trust_score'].mean():.3f}" if "trust_score" in df else "—",
@@ -130,13 +127,13 @@ metrics[4].metric(
 progress_value = (
     min(total_queries / warmup_queries, 1.0) if warmup_queries > 0 else 1.0
 )
-st.progress(
-    progress_value,
-    text=(
-        f"Warmup: {total_queries} / {warmup_queries} scored queries "
-        f"({'complete' if not is_warmup else 'in progress'})"
-    ),
-)
+# st.progress(
+#     progress_value,
+#     text=(
+#         f"Warmup: {total_queries} / {warmup_queries} scored queries "
+#         f"({'complete' if not is_warmup else 'in progress'})"
+#     ),
+# )
 
 overview_tab, nodes_tab, signals_tab, security_tab = st.tabs(
     ["📊 Overview", "🖥️ Nodes", "📈 Signals", "🔐 Security"]
@@ -225,26 +222,53 @@ with nodes_tab:
         st.json(node.to_dict())
 
 with signals_tab:
-    node_ids = sorted(df["node_id"].astype(str))
-    signal_node = st.selectbox("Node", node_ids, key="signal_node")
-    node_summary = (summary.get("nodes") or {}).get(signal_node, {})
+    node_summaries = summary.get("nodes") or {}
 
     trust_histories = {
-        "u_rel": node_summary.get("reputation_history", []),
-        "u_cons": node_summary.get("consistency_history", []),
-        "u_agr": node_summary.get("agreement_history", []),
+        "u_rel": {
+            node_id: list(node.get("reputation_history") or [])
+            for node_id, node in node_summaries.items()
+            if node.get("reputation_history")
+        },
+        "u_cons": {
+            node_id: list(node.get("consistency_history") or [])
+            for node_id, node in node_summaries.items()
+            if node.get("consistency_history")
+        },
+        "u_agr": {
+            node_id: list(node.get("agreement_history") or [])
+            for node_id, node in node_summaries.items()
+            if node.get("agreement_history")
+        },
     }
     if any(trust_histories.values()):
-        st.subheader("Trust trajectory")
+        st.subheader("Trust trajectories")
         st.caption(
-            "Per-query evolution of the three trust variables for the selected node."
+            "Per-query evolution of each trust variable for every node, so nodes "
+            "can be compared on the same axis."
         )
-        st.line_chart(histories_frame(trust_histories), height=280)
+        component_tabs = st.tabs(list(trust_histories))
+        for component_tab, (component, histories) in zip(
+            component_tabs, trust_histories.items()
+        ):
+            with component_tab:
+                if histories:
+                    st.caption(f"{component} · {len(histories)} node(s)")
+                    st.line_chart(histories_frame(histories), height=280)
+                else:
+                    st.info(f"No `{component}` history recorded yet.")
     else:
         st.info(
             "No trust history yet. Histories are recorded from the first routed "
             "query (including warmup)."
         )
+
+    st.divider()
+    node_ids = sorted(df["node_id"].astype(str))
+    signal_node = st.selectbox(
+        "Evidence feedback for node", node_ids, key="signal_node"
+    )
+    node_summary = node_summaries.get(signal_node, {})
 
     feedback_histories = {
         "f_rel": node_summary.get("rel_feedback_history", []),

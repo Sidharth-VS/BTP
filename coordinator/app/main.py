@@ -13,7 +13,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import uvicorn
 import yaml
@@ -48,6 +48,10 @@ class CoordinatorConfig(BaseSettings):
     max_nodes_per_host: int = 1
     attestation_freshness_seconds: float = 300.0
     attestation_storage_path: str = "workspace/coordinator/attestation_registry.json"
+    # Snapshot of the aggregate admission/registration latency values.
+    attestation_latency_storage_path: Optional[str] = (
+        "workspace/coordinator/latency_metrics.json"
+    )
     # Raw `tasr:` block from config.yaml, applied to the router by configure_tasr().
     tasr: Dict[str, Any] = Field(default_factory=dict)
 
@@ -73,6 +77,8 @@ def load_config(yaml_path: str = "coordinator/config.yaml") -> CoordinatorConfig
         flat["attestation_freshness_seconds"] = float(att_cfg["freshness_window_seconds"])
     if "storage_path" in att_cfg:
         flat["attestation_storage_path"] = att_cfg["storage_path"]
+    if "latency_storage_path" in att_cfg:
+        flat["attestation_latency_storage_path"] = att_cfg["latency_storage_path"]
 
     flat["tasr"] = raw.get("tasr", {}) or {}
 
@@ -117,6 +123,7 @@ def main() -> None:
         max_nodes_per_host=cfg.max_nodes_per_host,
         freshness_window_seconds=cfg.attestation_freshness_seconds,
         storage_path=cfg.attestation_storage_path,
+        latency_storage_path=cfg.attestation_latency_storage_path,
     )
     flower_server = FlowerServer(
         server_address=cfg.flower_server_address,

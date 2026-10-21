@@ -296,7 +296,9 @@ class FedRAGStrategy(Strategy):
                     attestation_data = json.loads(str(attestation_raw))
                     from shared.schemas.common import AttestationRequest
                     req = AttestationRequest(**attestation_data)
-                    admitted, msg, _ = self.admission_manager.attest_and_admit(req)
+                    admitted, msg, _ = self.admission_manager.attest_and_admit(
+                        req, channel="grpc-evaluate"
+                    )
                     if not admitted:
                         logger.warning(
                             "🚨 HARD DISCONNECT: Sybil or invalid node rejected: '%s' (CID: %s). Reason: %s",

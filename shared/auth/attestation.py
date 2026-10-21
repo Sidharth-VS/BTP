@@ -237,12 +237,18 @@ class NodeAttestationPayload:
     nonce: str
     hardware_summary: Dict[str, Any] = field(default_factory=dict)
     signature: Optional[str] = None
+    # Node-reported epoch seconds of process start. The coordinator uses it to
+    # measure registration latency (node start -> first registry appearance).
+    # It is deliberately NOT part of the fingerprint and NOT verified, so it is
+    # only meaningful for nodes that report their start time honestly.
+    node_started_at: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> NodeAttestationPayload:
+        started_at = data.get("node_started_at")
         return cls(
             node_id=str(data.get("node_id", "")),
             fingerprint=str(data.get("fingerprint", "")),
@@ -250,12 +256,20 @@ class NodeAttestationPayload:
             nonce=str(data.get("nonce", "")),
             hardware_summary=dict(data.get("hardware_summary", {})),
             signature=data.get("signature"),
+            node_started_at=float(started_at) if started_at is not None else None,
         )
 
 
-def create_attestation_payload(node_id: str) -> NodeAttestationPayload:
+def create_attestation_payload(
+    node_id: str,
+    node_started_at: Optional[float] = None,
+) -> NodeAttestationPayload:
     """
     Gathers local hardware info, computes fingerprint, and creates an attestation payload.
+
+    ``node_started_at`` should be the node process' start time (epoch seconds),
+    not the payload creation time; it drives the coordinator's registration
+    latency measurement.
     """
     raw_hw = HardwareCollector.collect_raw_identifiers()
     fingerprint = generate_host_fingerprint(raw_hw)
@@ -274,6 +288,7 @@ def create_attestation_payload(node_id: str) -> NodeAttestationPayload:
         timestamp=time.time(),
         nonce=uuid.uuid4().hex,
         hardware_summary=hardware_summary,
+        node_started_at=node_started_at,
     )
 
 

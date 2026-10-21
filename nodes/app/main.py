@@ -33,6 +33,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("node")
 
+# Node process start, reported to the coordinator so it can measure
+# registration latency (node start -> first appearance in a coordinator
+# registry). Captured at import time, before indexing, so it stays stable for
+# the lifetime of the process.
+NODE_STARTED_AT = time.time()
+
 
 # ---------------------------------------------------------------------------
 # Config loading — reads nodes/nodes.yaml and merges defaults
@@ -100,12 +106,14 @@ class FedRAGNodeClient(NumPyClient):
         chroma_store: ChromaStore,
         profiler: NodeProfiler,
         attestation_payload: Optional[Any] = None,
+        node_started_at: Optional[float] = None,
     ) -> None:
         self.node_id = node_id
         self.domain = domain
         self.chroma_store = chroma_store
         self.profiler = profiler
         self.attestation_payload = attestation_payload
+        self.node_started_at = node_started_at
 
     def get_properties(self, config: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("Sending registration profile to coordinator")
@@ -115,6 +123,10 @@ class FedRAGNodeClient(NumPyClient):
             "node_id": self.node_id,
             "domain": self.domain,
         }
+        # Carried outside the attestation JSON too, so the coordinator can time
+        # registration even if attestation admission is disabled.
+        if self.node_started_at is not None:
+            props["node_started_at"] = float(self.node_started_at)
         if self.attestation_payload:
             props["attestation"] = json.dumps(self.attestation_payload.to_dict())
             props["fingerprint"] = self.attestation_payload.fingerprint
@@ -241,7 +253,9 @@ def main() -> None:
 
     # Generate genuine hardware attestation
     from shared.auth.attestation import create_attestation_payload
-    attestation_payload = create_attestation_payload(node_id)
+    attestation_payload = create_attestation_payload(
+        node_id, node_started_at=NODE_STARTED_AT
+    )
     print(
         f"\n🔑 [Node '{node_id}'] Hardware Fingerprint: {attestation_payload.fingerprint}",
         flush=True,
@@ -349,6 +363,7 @@ def main() -> None:
             chroma_store=chroma_store,
             profiler=profiler,
             attestation_payload=attestation_payload,
+            node_started_at=NODE_STARTED_AT,
         ).to_client(),
         insecure=True,
     )

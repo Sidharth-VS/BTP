@@ -78,6 +78,9 @@ class AttestationRequest(BaseModel):
     nonce: str
     hardware_summary: Dict[str, Any] = Field(default_factory=dict)
     signature: Optional[str] = None
+    # Node-reported process start (epoch seconds); optional so older/hostile
+    # nodes can attest without it. Unverified — used only for latency telemetry.
+    node_started_at: Optional[float] = None
 
 
 class AttestationResponse(BaseModel):
