@@ -1,19 +1,14 @@
 #Pseudo-Testing code, 
 #Currently not the part of main project
-
 """Tests for coordinator REST endpoints and their TASR integration."""
-
 from typing import Any
-
 import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from coordinator.app.api.v1 import endpoints
 from coordinator.app.tasr.router import TrustAwareRouter
 from shared.schemas.common import AttestationRequest, QueryRequest
-
 
 class FakeAdmissionManager:
     def __init__(self) -> None:
@@ -47,19 +42,16 @@ class FakeAdmissionManager:
     def get_summary(self) -> dict[str, Any]:
         return {"authorized_nodes": sum(self.authorized.values())}
 
-
 class FakeBroker:
     def __init__(self, result: dict[str, Any] | None = None, error=None) -> None:
         self.result = result if result is not None else {"nodes": {}}
         self.error = error
         self.calls: list[dict[str, Any]] = []
-
     def submit_query(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
         if self.error is not None:
             raise self.error
         return self.result
-
 
 class FakeFlowerServer:
     def __init__(
@@ -73,39 +65,31 @@ class FakeFlowerServer:
         self.admission_manager = (
             admission_manager if admission_manager is not None else FakeAdmissionManager()
         )
-
     def get_node_registry(self) -> dict[str, dict[str, Any]]:
         return self.registry
 
-
 class FakeEmbedder:
     dimension = 2
-
     def __init__(self) -> None:
         self.query_calls: list[str] = []
         self.document_calls: list[list[str]] = []
-
     def embed_query(self, text: str) -> list[float]:
         self.query_calls.append(text)
         return [1.0, 0.0]
-
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         self.document_calls.append(texts)
         return [
             [1.0, 0.0] if "aligned" in text.lower() else [0.0, 1.0]
             for text in texts
         ]
-
-
+    
 class FakeSynthesizer:
     def __init__(self, answer: str = "Generated answer") -> None:
         self.answer = answer
         self.calls: list[dict[str, Any]] = []
-
     def synthesize(self, *, query: str, sources: list[Any]) -> str:
         self.calls.append({"query": query, "sources": sources})
         return self.answer
-
 
 def make_registry_entry(
     node_id: str,
@@ -127,7 +111,6 @@ def make_registry_entry(
         "authorized": authorized,
     }
 
-
 @pytest.fixture
 def api(monkeypatch):
     app = FastAPI()
@@ -148,9 +131,7 @@ def api(monkeypatch):
 
     def install_server(server: FakeFlowerServer) -> None:
         monkeypatch.setattr(endpoints, "get_flower_server", lambda: server)
-
     return client, embedder, synthesizer, router, install_server
-
 
 def test_configure_tasr_applies_supported_options_and_ignores_unknown():
     original_router = endpoints.tasr_router
@@ -162,7 +143,6 @@ def test_configure_tasr_applies_supported_options_and_ignores_unknown():
             "not_a_router_option": "ignored",
         }
     )
-
     try:
         assert router.k_route == 2
         assert router.warmup_queries == 7
@@ -170,7 +150,6 @@ def test_configure_tasr_applies_supported_options_and_ignores_unknown():
         assert router.explore_interval == 20
     finally:
         endpoints.tasr_router = original_router
-
 
 @pytest.mark.parametrize(
     ("claimed", "recomputed", "expected"),
@@ -191,7 +170,6 @@ def test_embedding_mismatch_handles_matching_and_incomparable_vectors(
         assert actual is None
     else:
         assert actual == pytest.approx(expected)
-
 
 def test_query_routes_and_returns_ranked_sources_and_updates_feedback(api):
     client, embedder, synthesizer, router, install_server = api
