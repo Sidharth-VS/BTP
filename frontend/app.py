@@ -166,7 +166,7 @@ def render_result(result: dict) -> None:
         "Nodes answered", routing.get("total_nodes_queried", len(selected))
     )
     metric_cols[2].metric("Strategy", str(routing.get("strategy_used", "unknown")).upper())
-    metric_cols[3].metric("Latency", f"{result['elapsed']:.2f}s")
+    # metric_cols[3].metric("Latency", f"{result['elapsed']:.2f}s")
 
     render_answer(result)
 
